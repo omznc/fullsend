@@ -9,7 +9,13 @@ export interface TrackingOptions {
   clickSecret: string | null;
 }
 
-const LINK = /(<a\b[^>]*?\bhref\s*=\s*)(["'])(https?:\/\/[^"']+)\2/gi;
+// The scan for `href` stops at `>` and also at the next `<a`. Without the
+// stop at `<a`, each `<a` before one `>` scans to that `>` again, and HTML
+// with many `<a` and no `>` takes quadratic time. The stop does not change
+// the result: a link after the next `<a` matches from that `<a`, and the
+// text before it stays the same.
+const LINK =
+  /(<a\b(?:(?!<a\b)[^>])*?\bhref\s*=\s*)(["'])(https?:\/\/[^"']+)\2/gi;
 
 export async function addTracking(
   html: string,
