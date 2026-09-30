@@ -23,6 +23,7 @@ import {
   FilterChip,
   Icon,
   Input,
+  Select,
   Notice,
   PageHeader,
   RelTime,
@@ -34,7 +35,14 @@ import {
   errorText,
 } from "../components/ui";
 import { plainReason, utc } from "../lib/format";
-import { useApi, useNarrow, usePoll, useTitle } from "../lib/hooks";
+import {
+  useApi,
+  useDismiss,
+  useNarrow,
+  usePoll,
+  usePresence,
+  useTitle,
+} from "../lib/hooks";
 import { Link, useQuery } from "../lib/router";
 
 const PAGE = 25;
@@ -401,14 +409,14 @@ function FilterBar({
             type="button"
             aria-expanded={open}
             onClick={() => setOpen(!open)}
-            className="flex h-11 items-center gap-1.5 border border-line2 bg-raised px-2.5 font-mono text-[13px] font-medium text-fg"
+            className="press flex h-11 items-center gap-1.5 border border-line2 bg-raised px-2.5 font-mono text-[13px] font-medium text-fg"
           >
             <Icon name="sliders" size={16} />
             filters{active > 0 && ` ${active}`}
           </button>
         </div>
         {open && (
-          <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
+          <div className="fs-enter flex flex-wrap items-center gap-1.5 px-4 pb-3">
             {controls}
           </div>
         )}
@@ -447,19 +455,21 @@ function Picker({
   }
 
   return (
-    <select
+    <Select
+      bare
+      chevron={false}
       aria-label={`Add ${name} filter`}
       value=""
-      onChange={(e) => onChange(e.target.value || null)}
-      className={dashed}
-    >
-      <option value="">+ {name}</option>
-      {options.map(([id, label]) => (
-        <option key={id} value={id}>
-          {label}
-        </option>
-      ))}
-    </select>
+      display={
+        <>
+          <Icon name="plus" size={16} />
+          {name}
+        </>
+      }
+      options={options.map(([id, label]) => ({ value: id, label }))}
+      onChange={(v) => onChange(v || null)}
+      className={cx(dashed, "press flex items-center")}
+    />
   );
 }
 
@@ -480,23 +490,25 @@ function SinceFilter({
     );
 
   return (
-    <select
+    <Select
+      bare
+      chevron={false}
       aria-label="Add time filter"
       value=""
-      onChange={(e) => {
-        const p = SINCE.find((s) => s.label === e.target.value);
+      display={
+        <>
+          <Icon name="plus" size={16} />
+          time
+        </>
+      }
+      options={SINCE.map((s) => ({ value: s.label, label: s.label }))}
+      onChange={(v) => {
+        const p = SINCE.find((s) => s.label === v);
 
         if (p) onChange(new Date(Date.now() - p.ms).toISOString());
       }}
-      className={dashed}
-    >
-      <option value="">+ time</option>
-      {SINCE.map((s) => (
-        <option key={s.label} value={s.label}>
-          {s.label}
-        </option>
-      ))}
-    </select>
+      className={cx(dashed, "press flex items-center")}
+    />
   );
 }
 
@@ -537,6 +549,9 @@ function StatusFilter({
   onChange: (v: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const shown = usePresence(open);
+  const box = useRef<HTMLDivElement>(null);
+  useDismiss(box, open, () => setOpen(false));
   const chosen = new Set(value ? value.split(",") : []);
 
   const toggle = (s: string, on: boolean) => {
@@ -548,10 +563,15 @@ function StatusFilter({
   };
 
   return (
+    // A click on a checkbox label moves the focus to no element, so a
+    // blur alone does not close the list. A click outside or a Tab out
+    // closes it.
     <div
+      ref={box}
       className="relative"
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
+        if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget))
+          setOpen(false);
       }}
       onKeyDown={(e) => {
         if (e.key === "Escape") setOpen(false);
@@ -562,7 +582,7 @@ function StatusFilter({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
         className={cx(
-          "flex h-11 items-center gap-1.5 px-2 font-mono text-[12px] md:h-9",
+          "press flex h-11 items-center gap-1.5 px-2 font-mono text-[12px] md:h-9",
           value
             ? "border border-line2 bg-raised text-fg"
             : "border border-dashed border-line2 text-fg2 hover:text-fg",
@@ -590,8 +610,11 @@ function StatusFilter({
           clear
         </button>
       )}
-      {open && (
-        <div className="absolute top-full left-0 z-20 mt-1 flex w-56 flex-col gap-1 border border-line2 bg-bg p-3 shadow-[0_10px_30px_var(--shadow)]">
+      {shown && (
+        <div
+          data-state={open ? "open" : "closed"}
+          className="fs-pop absolute top-full left-0 z-20 mt-1 flex w-56 origin-top-left flex-col gap-1 border border-line2 bg-bg p-3 shadow-[0_10px_30px_var(--shadow)]"
+        >
           {STATUSES.map((s) => (
             <Checkbox
               key={s}

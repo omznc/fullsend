@@ -8,7 +8,6 @@ import {
   ErrorState,
   Icon,
   Input,
-  Notice,
   PageHeader,
   Select,
   SkeletonBlock,
@@ -266,14 +265,9 @@ function Form({ domains }: { domains: Domain[] }) {
           <Select
             aria-label="Sending domain"
             value={f.domain}
-            onChange={(e) => set({ domain: e.target.value })}
-          >
-            {domains.map((d) => (
-              <option key={d.id} value={d.name}>
-                {d.name}
-              </option>
-            ))}
-          </Select>
+            onChange={(v) => set({ domain: v })}
+            options={domains.map((d) => ({ value: d.name, label: d.name }))}
+          />
         </Row>
         <Row label="To" htmlFor="pg-to">
           <Input
@@ -465,6 +459,12 @@ export function Playground() {
       <PageHeader
         title="Playground"
         subtitle="Send a real email from here. The right side shows the same request as code."
+        actions={
+          <span className="tint-amber inline-flex h-7 items-center gap-1.5 px-2 font-mono text-[12px]">
+            <Icon name="warning-box" size={16} />
+            this form sends a real email
+          </span>
+        }
       />
       <div className="border-t border-line" />
       {res.error && !res.data ? (
@@ -489,12 +489,7 @@ export function Playground() {
           its DNS records first.
         </EmptyState>
       ) : (
-        <>
-          <Notice tone="amber" className="m-4 md:m-8">
-            This form sends a real email.
-          </Notice>
-          <Form domains={verified} />
-        </>
+        <Form domains={verified} />
       )}
     </div>
   );

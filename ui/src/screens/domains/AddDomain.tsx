@@ -7,9 +7,11 @@ import {
   errorText,
   Field,
   Icon,
+  Indicator,
   Input,
   Notice,
   SidePanel,
+  useIndicator,
 } from "../../components/ui";
 import { useApi } from "../../lib/hooks";
 import { navigate } from "../../lib/router";
@@ -152,13 +154,16 @@ function Onboard({
   const [step, setStep] = useState<Step>("domain");
   const [domain, setDomain] = useState<Domain | null>(null);
   const current = STEPS.findIndex((x) => x.value === step);
+  const bar = useIndicator<HTMLDivElement>();
 
   return (
     <div className="flex min-h-full flex-col">
       <div
+        ref={bar}
         role="list"
-        className="grid grid-cols-3 border-b border-line font-mono text-[12px]"
+        className="relative grid grid-cols-3 border-b border-line font-mono text-[12px]"
       >
+        <Indicator />
         {STEPS.map((s, i) => {
           const done = i < current;
 
@@ -168,12 +173,8 @@ function Onboard({
               role="listitem"
               aria-current={s.value === step ? "step" : undefined}
               className={
-                "flex h-10 items-center gap-0.5 px-3 md:px-4 " +
-                (s.value === step
-                  ? "text-fg shadow-[inset_0_-2px_0_var(--accent)]"
-                  : done
-                    ? "text-fg2"
-                    : "text-fg3")
+                "flex h-10 items-center gap-0.5 px-3 md:px-4 transition-colors " +
+                (s.value === step ? "text-fg" : done ? "text-fg2" : "text-fg3")
               }
             >
               {done && <Icon name="check" className="text-green" />}

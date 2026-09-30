@@ -389,15 +389,12 @@ function CreateForm({
         <Select
           value={permission === "full_access" ? "" : domainId}
           disabled={permission === "full_access"}
-          onChange={(e) => setDomainId(e.target.value)}
-        >
-          <option value="">all domains</option>
-          {domains.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </Select>
+          onChange={setDomainId}
+          options={[
+            { value: "", label: "all domains" },
+            ...domains.map((d) => ({ value: d.id, label: d.name })),
+          ]}
+        />
       </Field>
       <Field
         label="Rate limit per second"

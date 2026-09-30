@@ -1,9 +1,19 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api, type SearchResult } from "../api";
-import { useNarrow } from "../lib/hooks";
+import { useNarrow, usePresence } from "../lib/hooks";
 import { Link, navigate, toUrl, useLocation } from "../lib/router";
 import { apiBase, useSession } from "../session";
-import { Badge, CopyButton, cx, Icon, IconButton, Kbd, Logo } from "./ui";
+import {
+  Badge,
+  CopyButton,
+  cx,
+  Icon,
+  IconButton,
+  Indicator,
+  Kbd,
+  Logo,
+  useIndicator,
+} from "./ui";
 
 export const NAV: { label: string; href: string; icon: string }[] = [
   { label: "overview", href: "/", icon: "dashbaord" },
@@ -33,9 +43,12 @@ export function Shell({ children }: { children: ReactNode }) {
   // The menu is open for one path. A new page closes it.
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const menu = menuFor === path;
+  const menuShown = usePresence(menu);
   const [search, setSearch] = useState(false);
+  const searchShown = usePresence(search);
   const active = current(path);
   const base = apiBase(session);
+  const navRef = useIndicator<HTMLElement>();
 
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
@@ -100,7 +113,7 @@ export function Shell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
       {narrow ? (
-        <div className="sticky top-0 z-30 bg-bg font-mono text-[13px]">
+        <div className="material sticky top-0 z-30 font-mono text-[13px]">
           <div className="flex h-[52px] items-center justify-between border-b border-line pr-1 pl-4">
             <Link href="/" className="no-underline">
               <Logo />
@@ -123,10 +136,11 @@ export function Shell({ children }: { children: ReactNode }) {
               />
             </div>
           </div>
-          {menu && (
+          {menuShown && (
             <nav
               aria-label="Main"
-              className="fixed inset-x-0 top-[52px] bottom-0 z-30 flex flex-col overflow-y-auto bg-bg"
+              data-state={menu ? "open" : "closed"}
+              className="fs-pop fixed inset-x-0 top-[52px] bottom-0 z-30 flex origin-top flex-col overflow-y-auto bg-bg"
             >
               {NAV.map((n) => (
                 <Link
@@ -192,9 +206,11 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           </div>
           <nav
+            ref={navRef}
             aria-label="Main"
-            className="flex h-11 items-stretch overflow-x-auto border-b border-line pl-2"
+            className="relative flex h-11 items-stretch overflow-x-auto border-b border-line pl-2"
           >
+            <Indicator />
             {NAV.map((n) => (
               <Link
                 key={n.href}
@@ -202,9 +218,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 aria-current={n.href === active ? "page" : undefined}
                 className={cx(
                   "flex shrink-0 items-center gap-1.5 px-3 no-underline hover:text-fg",
-                  n.href === active
-                    ? "text-fg shadow-[inset_0_-2px_0_var(--accent)]"
-                    : "text-fg3",
+                  n.href === active ? "text-fg" : "text-fg3",
                 )}
               >
                 <Icon name={n.icon} />
@@ -214,10 +228,19 @@ export function Shell({ children }: { children: ReactNode }) {
           </nav>
         </div>
       )}
-      <main id="main" className="flex min-w-0 flex-1 flex-col">
+      {/* Each page fades in. The key mounts main again on a new path.
+          Only the opacity changes: a transform on main would hold the
+          fixed side panels while it runs. */}
+      <main
+        key={path}
+        id="main"
+        className="fs-fade flex min-w-0 flex-1 flex-col transition-opacity duration-200 ease-out"
+      >
         {children}
       </main>
-      {search && <CommandPalette onClose={() => setSearch(false)} />}
+      {searchShown && (
+        <CommandPalette shown={search} onClose={() => setSearch(false)} />
+      )}
     </div>
   );
 }
@@ -233,7 +256,13 @@ interface Item {
 
 // Cmd+K. An exact id jumps straight to the item. Otherwise the results
 // group into emails, domains, keys, webhooks and pages.
-function CommandPalette({ onClose }: { onClose: () => void }) {
+function CommandPalette({
+  shown,
+  onClose,
+}: {
+  shown: boolean;
+  onClose: () => void;
+}) {
   const [q, setQ] = useState("");
 
   const [found, setFound] = useState<{
@@ -244,9 +273,16 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   const [sel, setSel] = useState(0);
   const dialog = useRef<HTMLDialogElement>(null);
 
+  // The palette stays mounted while it plays its exit.
   useEffect(() => {
-    dialog.current?.showModal();
-  }, []);
+    const d = dialog.current;
+
+    if (!d) return;
+
+    if (shown && !d.open) d.showModal();
+
+    if (!shown && d.open) d.close();
+  }, [shown]);
 
   useEffect(() => {
     const term = q.trim();
@@ -351,7 +387,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
       onClick={(e) => {
         if (e.target === dialog.current) onClose();
       }}
-      className="mx-auto mt-[12vh] w-[calc(100vw-32px)] max-w-[560px] border border-line2 bg-bg p-0 text-fg shadow-[0_20px_50px_var(--shadow)] backdrop:bg-black/50"
+      className="fs-dialog mx-auto mt-[12vh] w-[calc(100vw-32px)] max-w-[560px] origin-top border border-line2 bg-bg p-0 text-fg shadow-[0_20px_50px_var(--shadow)] [--enter-y:-8px]"
     >
       <div className="flex h-12 items-center gap-2 border-b border-line px-3">
         <Icon name="search" className="text-fg3" />

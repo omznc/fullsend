@@ -33,9 +33,15 @@ media.addEventListener("change", apply);
 
 apply();
 
+const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+
 export function setTheme(choice: ThemeChoice) {
   localStorage.setItem(KEY, choice);
-  apply();
+
+  // A cross-fade, so a change from dark to light is not a flash.
+  if ("startViewTransition" in document && !still.matches)
+    document.startViewTransition(apply);
+  else apply();
 
   for (const fn of listeners) fn();
 }

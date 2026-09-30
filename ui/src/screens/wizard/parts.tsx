@@ -108,7 +108,7 @@ export function StepFrame({
         // Sticky, so the next action stays in view on a long step.
         <div
           className={cx(
-            "sticky bottom-0 flex flex-wrap items-center gap-2 border-t border-line bg-bg py-3",
+            "material sticky bottom-0 flex flex-wrap items-center gap-2 border-t border-line py-3",
             pad,
           )}
         >

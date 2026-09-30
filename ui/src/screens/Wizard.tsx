@@ -245,7 +245,7 @@ export function Wizard() {
           <span
             key={i}
             className={cx(
-              "h-1",
+              "h-1 transition-colors duration-300 ease-out",
               i + 1 < step
                 ? "bg-green"
                 : i + 1 === step
@@ -319,7 +319,8 @@ export function Wizard() {
             })}
           </ol>
         )}
-        <section className="flex min-w-0 flex-col">
+        {/* Each step fades in. The key mounts the section again. */}
+        <section key={step} className="fs-enter flex min-w-0 flex-col">
           <div
             className={cx(
               "flex flex-col gap-1.5 border-b border-line",

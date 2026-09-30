@@ -271,9 +271,10 @@ export interface CfSuppression {
 export type RateLevel = "good" | "warning" | "danger" | null;
 
 export interface Overview {
-  period: "24h" | "7d" | "30d";
+  period: "24h" | "7d" | "30d" | "all";
   total_emails: number;
-  stats: { type: string; value: number; previous: number }[];
+  // `previous` is null for "all": no period comes before it.
+  stats: { type: string; value: number; previous: number | null }[];
   series: { at: string; sent: number; delivered: number; bounced: number }[];
   bounce_rate: { value: number | null; level: RateLevel };
   complaint_rate: { value: number | null; level: RateLevel };

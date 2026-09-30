@@ -19,16 +19,25 @@ import {
   EmptyState,
   ErrorState,
   Icon,
+  Indicator,
   Input,
   Notice,
   SkeletonBlock,
   cx,
   errorText,
   useCopy,
+  useIndicator,
   useToast,
 } from "../components/ui";
 import { address, bytes, clock, plainReason, utc } from "../lib/format";
-import { useApi, useNarrow, useNow, usePoll, useTitle } from "../lib/hooks";
+import {
+  useApi,
+  useNarrow,
+  useNow,
+  usePoll,
+  usePresence,
+  useTitle,
+} from "../lib/hooks";
 import {
   isJsonObject,
   pick,
@@ -511,6 +520,7 @@ function Loaded({
   const [copied, copy] = useCopy();
   const [again, setAgain] = useState(false);
   const [picker, setPicker] = useState(false);
+  const pickerShown = usePresence(picker);
   const [cancelOpen, setCancelOpen] = useState(false);
 
   const scheduled = email.status === "scheduled";
@@ -524,6 +534,7 @@ function Loaded({
 
   const recipients = useMemo(() => recipientsOf(email), [email]);
   const [picked, setPicked] = useState<string | null>(null);
+  const recipientBar = useIndicator<HTMLDivElement>();
 
   const selected =
     recipients.find((r) => r.addr === picked) ??
@@ -639,8 +650,8 @@ function Loaded({
               >
                 reschedule
               </Button>
-              {picker && !narrow && (
-                <Popover onClose={() => setPicker(false)}>
+              {pickerShown && !narrow && (
+                <Popover open={picker} onClose={() => setPicker(false)}>
                   <ReschedulePicker
                     now={now}
                     initial={email.scheduled_at}
@@ -720,10 +731,12 @@ function Loaded({
         <div className="flex min-w-0 flex-col border-line md:border-r">
           <section className="border-b border-line">
             <div
+              ref={recipientBar}
               role="tablist"
               aria-label="Recipients"
-              className="flex overflow-x-auto border-b border-line px-1 md:px-5"
+              className="relative flex overflow-x-auto border-b border-line px-1 md:px-5"
             >
+              <Indicator />
               {recipients.map((r) => (
                 <button
                   key={r.addr}
@@ -733,9 +746,7 @@ function Loaded({
                   onClick={() => setPicked(r.addr)}
                   className={cx(
                     "flex h-12 flex-none items-center gap-2 border-0 bg-transparent px-3 font-mono text-[12.5px]",
-                    r === selected
-                      ? "text-fg shadow-[inset_0_-2px_0_var(--accent)]"
-                      : "text-fg3 hover:text-fg",
+                    r === selected ? "text-fg" : "text-fg3 hover:text-fg",
                   )}
                 >
                   {r.addr}
@@ -981,7 +992,7 @@ function Timeline({
                 </span>
               )}
               {open && (
-                <div className="border border-line bg-panel font-mono text-[12px] leading-[19px]">
+                <div className="fs-enter border border-line bg-panel font-mono text-[12px] leading-[19px]">
                   {rows.map((d) => (
                     <div
                       key={d.k}
@@ -1035,6 +1046,7 @@ function BodySection({
 }) {
   const [tab, setTab] = useState<PreviewTab>("html");
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
+  const tabBar = useIndicator<HTMLDivElement>();
 
   const tabs: { value: PreviewTab; label: string }[] = [
     { value: "html", label: "html" },
@@ -1125,7 +1137,7 @@ function BodySection({
           sandbox="allow-popups allow-popups-to-escape-sandbox"
           referrerPolicy="no-referrer"
           srcDoc={previewDoc(data.html)}
-          className="mx-auto block h-[480px] w-full border-0 bg-white shadow-[0_0_0_1px_var(--line)]"
+          className="mx-auto block h-[480px] w-full border-0 bg-white shadow-[0_0_0_1px_var(--line)] transition-[max-width] duration-[var(--dur-spring)] ease-[var(--spring)] motion-reduce:transition-none"
           style={{ maxWidth: px }}
         />
         <div className="mt-2 text-center font-mono text-[11px] text-fg3">
@@ -1144,7 +1156,13 @@ function BodySection({
   return (
     <section className="border-b border-line">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-1 md:px-5">
-        <div role="tablist" aria-label="Body" className="flex">
+        <div
+          ref={tabBar}
+          role="tablist"
+          aria-label="Body"
+          className="relative flex"
+        >
+          <Indicator />
           {tabs.map((t) => (
             <button
               key={t.value}
@@ -1154,9 +1172,7 @@ function BodySection({
               onClick={() => setTab(t.value)}
               className={cx(
                 "h-11 border-0 bg-transparent px-3 font-mono text-[12.5px] font-medium",
-                tab === t.value
-                  ? "text-fg shadow-[inset_0_-2px_0_var(--accent)]"
-                  : "text-fg3 hover:text-fg",
+                tab === t.value ? "text-fg" : "text-fg3 hover:text-fg",
               )}
             >
               {t.label}
@@ -1183,7 +1199,7 @@ function BodySection({
                 aria-label={label}
                 onClick={() => setWidth(value)}
                 className={cx(
-                  "grid size-9 place-items-center border bg-transparent max-md:size-11",
+                  "press-icon grid size-9 place-items-center border bg-transparent max-md:size-11",
                   width === value
                     ? "border-fg2 text-fg"
                     : "border-line2 text-fg3",
@@ -1195,7 +1211,9 @@ function BodySection({
           </div>
         )}
       </div>
-      {content}
+      <div key={tab} className="fs-fade transition-opacity duration-200">
+        {content}
+      </div>
     </section>
   );
 }
@@ -1212,9 +1230,11 @@ function previewDoc(html: string): string {
 // The reschedule control
 
 function Popover({
+  open,
   onClose,
   children,
 }: {
+  open: boolean;
   onClose: () => void;
   children: React.ReactNode;
 }) {
@@ -1246,7 +1266,8 @@ function Popover({
       ref={ref}
       role="dialog"
       aria-label="Reschedule"
-      className="absolute top-[46px] right-0 z-[3] w-[300px] border border-line2 bg-bg shadow-[0_20px_50px_var(--shadow)]"
+      data-state={open ? "open" : "closed"}
+      className="fs-pop absolute top-[46px] right-0 z-[3] w-[300px] origin-top-right border border-line2 bg-bg shadow-[0_20px_50px_var(--shadow)]"
     >
       {children}
     </div>
@@ -1381,7 +1402,7 @@ function ReschedulePicker({
               aria-pressed={on}
               onClick={() => setDay({ y: view.y, m: view.m, d: n })}
               className={cx(
-                "h-8 border-0 max-md:h-10",
+                "press h-8 border-0 max-md:h-10",
                 on
                   ? "bg-accent font-semibold text-accent-ink"
                   : "bg-transparent text-fg hover:bg-hover",

@@ -4,18 +4,18 @@ import {
   createContext,
   type InputHTMLAttributes,
   type ReactNode,
-  type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
   useCallback,
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import { ApiRequestError } from "../api";
-import { relative, utc } from "../lib/format";
-import { useNow } from "../lib/hooks";
+import { number, relative, utc } from "../lib/format";
+import { EXIT_MS, useDismiss, useNow, usePresence } from "../lib/hooks";
 import { Link, navigate, toUrl } from "../lib/router";
 
 // The shared components of the Story design system. Square corners,
@@ -105,7 +105,7 @@ export function Button({
       disabled={off}
       aria-busy={busy || undefined}
       className={cx(
-        "inline-flex shrink-0 items-center gap-1.5 font-mono whitespace-nowrap",
+        "press inline-flex shrink-0 items-center gap-1.5 font-mono whitespace-nowrap",
         size === "md" ? "h-9 text-[12.5px]" : "h-8 text-[12px]",
         icon ? "pr-3.5 pl-3" : iconEnd ? "pr-2 pl-2.5" : "px-3.5",
         off ? "border-0 bg-raised font-semibold text-fg3" : VARIANT[variant],
@@ -144,7 +144,7 @@ export function IconButton({
       aria-label={label}
       title={label}
       className={cx(
-        "grid shrink-0 place-items-center bg-transparent text-fg2 hover:text-fg",
+        "press-icon grid shrink-0 place-items-center bg-transparent text-fg2 hover:text-fg",
         bordered ? "border border-line2" : "border-0",
         className,
       )}
@@ -178,7 +178,7 @@ export function ButtonLink({
       target={external ? "_blank" : undefined}
       rel={external ? "noreferrer" : undefined}
       className={cx(
-        "inline-flex h-9 shrink-0 items-center gap-1.5 font-mono text-[12.5px] whitespace-nowrap no-underline",
+        "press inline-flex h-9 shrink-0 items-center gap-1.5 font-mono text-[12.5px] whitespace-nowrap no-underline",
         icon ? "pr-3.5 pl-3" : "px-3.5",
         VARIANT[variant],
         variant === "primary" && "hover:text-accent-ink",
@@ -223,6 +223,73 @@ export function TextLink({
         <Icon name={iconEnd ?? "external-link"} size={16} />
       )}
     </Link>
+  );
+}
+
+// Animated numbers
+
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+// The same spring as --spring in index.css, as a function of t in 0..1.
+const springAt = (t: number) =>
+  t >= 1 ? 1 : 1 - (1 + 9.2 * t) * Math.exp(-9.2 * t);
+
+const wholeNumber = (v: number) => number(Math.round(v));
+
+// A number that counts to its new value. A new value during the count
+// starts from the number on screen, so the count never jumps. The digits
+// are tabular, so the width does not shake. A screen reader reads only
+// the final value.
+export function AnimatedNumber({
+  value,
+  format = wholeNumber,
+  className,
+}: {
+  value: number;
+  format?: (v: number) => string;
+  className?: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const shown = useRef<number | null>(null);
+  const fmt = useRef(format);
+  useEffect(() => {
+    fmt.current = format;
+  });
+  useLayoutEffect(() => {
+    const el = ref.current;
+
+    if (!el) return;
+    const from = shown.current;
+
+    if (from === null || from === value || reduceMotion.matches) {
+      shown.current = value;
+      el.textContent = fmt.current(value);
+
+      return;
+    }
+
+    const start = performance.now();
+    let frame = 0;
+
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / 700);
+      const v = from + (value - from) * springAt(t);
+      shown.current = v;
+      el.textContent = fmt.current(v);
+
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+
+  return (
+    <span className={cx("tabular-nums", className)}>
+      <span ref={ref} aria-hidden />
+      <span className="sr-only">{format(value)}</span>
+    </span>
   );
 }
 
@@ -343,7 +410,7 @@ export function Field({
       <span className="text-[13px] text-fg2">{label}</span>
       {children}
       {error ? (
-        <span className="flex items-center gap-1 text-[12.5px] text-red">
+        <span className="fs-enter flex items-center gap-1 text-[12.5px] text-red">
           <Icon name="alert" size={16} />
           {error}
         </span>
@@ -389,15 +456,177 @@ export function Textarea({
   );
 }
 
+export interface SelectOption {
+  value: string;
+  label: ReactNode;
+}
+
+// A dropdown in the style of the dashboard, in place of a native
+// <select>. The list grows from the trigger. Arrow keys, Home, End, Enter
+// and Escape work as in a native select. With `bare`, the trigger takes
+// only `className` (for the dashed filters on the email list).
 export function Select({
+  value,
+  options,
+  onChange,
+  placeholder,
+  display,
+  disabled,
+  invalid,
+  bare,
+  chevron = true,
   className,
-  children,
-  ...rest
-}: SelectHTMLAttributes<HTMLSelectElement>) {
+  "aria-label": ariaLabel,
+}: {
+  value: string;
+  options: SelectOption[];
+  onChange: (v: string) => void;
+  placeholder?: ReactNode;
+  // The trigger content. The default is the label of the value.
+  display?: ReactNode;
+  disabled?: boolean;
+  invalid?: boolean;
+  bare?: boolean;
+  chevron?: boolean;
+  className?: string;
+  "aria-label"?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const shown = usePresence(open);
+  const [active, setActive] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+  useDismiss(box, open, () => setOpen(false));
+  const current = options.find((o) => o.value === value);
+
+  const show = () => {
+    setActive(
+      Math.max(
+        0,
+        options.findIndex((o) => o.value === value),
+      ),
+    );
+    setOpen(true);
+  };
+
+  const pick = (v: string) => {
+    setOpen(false);
+    trigger.current?.focus();
+
+    if (v !== value) onChange(v);
+  };
+
+  const move = (i: number) => {
+    const next = Math.min(Math.max(i, 0), options.length - 1);
+    setActive(next);
+    document
+      .getElementById(`${listId}-${next}`)
+      ?.scrollIntoView({ block: "nearest" });
+  };
+
   return (
-    <select className={cx(inputClass(), "pr-7", className)} {...rest}>
-      {children}
-    </select>
+    <div
+      ref={box}
+      className={cx("relative min-w-0", !bare && "w-full")}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && open) {
+          // Keep an open dialog open: only the list closes.
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        ref={trigger}
+        type="button"
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-activedescendant={open ? `${listId}-${active}` : undefined}
+        aria-label={ariaLabel}
+        aria-invalid={invalid || undefined}
+        disabled={disabled}
+        onClick={() => (open ? setOpen(false) : show())}
+        onBlur={(e) => {
+          if (e.relatedTarget && !box.current?.contains(e.relatedTarget))
+            setOpen(false);
+        }}
+        onKeyDown={(e) => {
+          const keys = ["ArrowDown", "ArrowUp", "Home", "End", "Enter", " "];
+
+          if (!keys.includes(e.key)) return;
+          e.preventDefault();
+
+          if (!open) return show();
+
+          if (e.key === "ArrowDown") move(active + 1);
+          else if (e.key === "ArrowUp") move(active - 1);
+          else if (e.key === "Home") move(0);
+          else if (e.key === "End") move(options.length - 1);
+          else if (options[active]) pick(options[active].value);
+        }}
+        className={
+          bare
+            ? className
+            : cx(
+                inputClass(invalid),
+                "flex items-center justify-between gap-2 pr-1.5 text-left disabled:text-fg3",
+                className,
+              )
+        }
+      >
+        <span className="flex min-w-0 items-center gap-1 truncate">
+          {display ?? current?.label ?? (
+            <span className="text-fg3">{placeholder}</span>
+          )}
+        </span>
+        {chevron && (
+          <Icon
+            name="chevron-down"
+            size={16}
+            className={cx(
+              "text-fg3 transition-[rotate] duration-200 ease-out",
+              open && "rotate-180",
+            )}
+          />
+        )}
+      </button>
+      {shown && (
+        <div
+          id={listId}
+          role="listbox"
+          data-state={open ? "open" : "closed"}
+          // A click in a <label> (a Field) would click the trigger again.
+          onClick={(e) => e.preventDefault()}
+          className="fs-pop absolute top-full left-0 z-30 mt-1 max-h-64 w-max max-w-[min(360px,calc(100vw-32px))] min-w-full origin-top-left overflow-y-auto border border-line2 bg-bg py-1 shadow-[0_10px_30px_var(--shadow)]"
+        >
+          {options.map((o, i) => (
+            <div
+              key={o.value}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={o.value === value}
+              onPointerEnter={() => setActive(i)}
+              onClick={() => pick(o.value)}
+              className={cx(
+                "flex cursor-pointer items-center gap-2 py-1.5 pr-2 pl-2.5 font-mono text-[12.5px]",
+                i === active &&
+                  "bg-raised shadow-[inset_3px_0_0_var(--accent)]",
+                o.value === value ? "text-fg" : "text-fg2",
+              )}
+            >
+              <span className="min-w-0 flex-1 truncate">{o.label}</span>
+              {o.value === value && (
+                <Icon name="check" size={16} className="text-accent-fg" />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -412,10 +641,13 @@ export function Checkbox({
   children?: ReactNode;
   disabled?: boolean;
 }) {
+  // The glyph animates only after a change, not when the page loads.
+  const [touched, setTouched] = useState(false);
+
   return (
     <label
       className={cx(
-        "inline-flex cursor-pointer items-center gap-1.5",
+        "inline-flex cursor-pointer items-center gap-1.5 transition-colors",
         !checked && "text-fg2",
         disabled && "cursor-not-allowed opacity-60",
       )}
@@ -425,14 +657,19 @@ export function Checkbox({
         className="peer sr-only"
         checked={checked}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
+        onChange={(e) => {
+          setTouched(true);
+          onChange(e.target.checked);
+        }}
       />
       {/* In pixelarticons 1.8, "checkbox" has the check mark and
           "checkbox-on" is the empty box. */}
       <Icon
+        key={String(checked)}
         name={checked ? "checkbox" : "checkbox-on"}
         className={cx(
           checked && "text-accent-fg",
+          touched && "fs-swap",
           "peer-focus-visible:outline-2 peer-focus-visible:outline-accent-fg",
         )}
       />
@@ -452,13 +689,18 @@ export function Toggle({
   children?: ReactNode;
   disabled?: boolean;
 }) {
+  const [touched, setTouched] = useState(false);
+
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       disabled={disabled}
-      onClick={() => onChange(!checked)}
+      onClick={() => {
+        setTouched(true);
+        onChange(!checked);
+      }}
       className={cx(
         "inline-flex items-center gap-1.5 border-0 bg-transparent p-0 text-left",
         checked ? "text-fg" : "text-fg2",
@@ -466,11 +708,87 @@ export function Toggle({
       )}
     >
       <Icon
+        key={String(checked)}
         name={checked ? "toggle-right" : "toggle-left"}
-        className={checked ? "text-accent-fg" : undefined}
+        className={cx(checked && "text-accent-fg", touched && "fs-swap")}
       />
       {children}
     </button>
+  );
+}
+
+// The bar under the current tab, or the fill behind the current option.
+// It slides from the old choice to the new one. The container is
+// `relative` and has an <Indicator /> as a direct child. The current item
+// is the direct child with aria-selected, aria-current or aria-checked.
+
+const CURRENT =
+  ':scope > :is([aria-selected="true"], [aria-current="page"], [aria-current="step"], [aria-checked="true"])';
+
+// Moves the bar of `box` to its current item. Hides it when no item is
+// current.
+function placeIndicator(box: HTMLElement) {
+  const bar = box.querySelector<HTMLElement>(":scope > [data-indicator]");
+
+  if (!bar) return;
+  const el = box.querySelector<HTMLElement>(CURRENT);
+
+  if (!el) {
+    bar.style.opacity = "0";
+
+    return;
+  }
+
+  bar.style.opacity = "1";
+  bar.style.transform = `translateX(${el.offsetLeft}px) scaleX(${el.offsetWidth})`;
+}
+
+export function useIndicator<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+
+  // The first placement does not slide. A label can change its width (a
+  // count, a web font that loads), so the bar follows each resize.
+  useLayoutEffect(() => {
+    const box = ref.current;
+
+    if (!box) return;
+    placeIndicator(box);
+
+    const frame = requestAnimationFrame(() => {
+      const bar = box.querySelector<HTMLElement>(":scope > [data-indicator]");
+
+      if (bar) bar.dataset.ready = "";
+    });
+
+    const watch = new ResizeObserver(() => placeIndicator(box));
+    watch.observe(box);
+
+    for (const child of box.children) watch.observe(child);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      watch.disconnect();
+    };
+  }, []);
+
+  // A render can change the current item. The measure is cheap.
+  useLayoutEffect(() => {
+    if (ref.current) placeIndicator(ref.current);
+  });
+
+  return ref;
+}
+
+export function Indicator({ fill }: { fill?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      data-indicator
+      className={cx(
+        "pointer-events-none absolute left-0 w-px origin-left opacity-0",
+        fill ? "inset-y-0 bg-raised" : "bottom-0 h-0.5 bg-accent",
+      )}
+    />
   );
 }
 
@@ -486,8 +804,16 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
   label: string;
 }) {
+  const ref = useIndicator<HTMLDivElement>();
+
   return (
-    <div role="radiogroup" aria-label={label} className="flex">
+    <div
+      ref={ref}
+      role="radiogroup"
+      aria-label={label}
+      className="relative flex"
+    >
+      <Indicator fill />
       {options.map((o, i) => (
         <button
           key={o.value}
@@ -496,11 +822,9 @@ export function Segmented<T extends string>({
           aria-checked={o.value === value}
           onClick={() => onChange(o.value)}
           className={cx(
-            "h-8 border border-line2 px-2.5 font-mono text-[12px]",
+            "relative h-8 border border-line2 bg-transparent px-2.5 font-mono text-[12px]",
             i > 0 && "-ml-px",
-            o.value === value
-              ? "relative z-10 bg-raised text-fg"
-              : "bg-transparent text-fg3 hover:text-fg",
+            o.value === value ? "z-10 text-fg" : "text-fg3 hover:text-fg",
           )}
         >
           {o.label}
@@ -522,11 +846,18 @@ export function Tabs<T extends string>({
   onChange: (v: T) => void;
   className?: string;
 }) {
+  const ref = useIndicator<HTMLDivElement>();
+
   return (
     <div
+      ref={ref}
       role="tablist"
-      className={cx("flex items-stretch border-b border-line", className)}
+      className={cx(
+        "relative flex items-stretch border-b border-line",
+        className,
+      )}
     >
+      <Indicator />
       {tabs.map((t) => (
         <button
           key={t.value}
@@ -536,9 +867,7 @@ export function Tabs<T extends string>({
           onClick={() => onChange(t.value)}
           className={cx(
             "flex h-10 items-center gap-1.5 border-0 bg-transparent px-3.5 font-mono text-[12.5px] font-medium",
-            t.value === value
-              ? "text-fg shadow-[inset_0_-2px_0_var(--accent)]"
-              : "text-fg3 hover:text-fg",
+            t.value === value ? "text-fg" : "text-fg3 hover:text-fg",
           )}
         >
           {t.label}
@@ -587,20 +916,20 @@ export function CopyButton({
   className?: string;
 }) {
   const [done, copy] = useCopy();
+  // The swap animates only after a copy, not when the page loads.
+  const [used, setUsed] = useState(false);
 
   if (done)
     return (
       <span
         className={cx(
-          "inline-flex shrink-0 items-center gap-1.5 px-2 font-mono text-[12px] text-green",
+          "fs-enter inline-flex shrink-0 items-center gap-1.5 px-2 font-mono text-[12px] text-green",
           className,
         )}
-        style={{
-          height: size,
-          background: "color-mix(in oklab, var(--green) 14%, transparent)",
-        }}
+        // No fill: a tint box floats with uneven gaps in a padded field.
+        style={{ height: size }}
       >
-        <Icon name="check" size={16} />
+        <Icon name="check" size={16} className="fs-swap" />
         copied
       </span>
     );
@@ -611,9 +940,10 @@ export function CopyButton({
       label={label}
       size={size}
       bordered={bordered}
-      className={className}
+      className={cx(used && "fs-fade", className)}
       onClick={(e) => {
         e.stopPropagation();
+        setUsed(true);
         copy(text);
       }}
     />
@@ -670,7 +1000,7 @@ export function RelTime({
       {relative(at, now)}
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-0 z-30 mb-1.5 hidden bg-fg px-2 py-1 text-[12.5px] whitespace-nowrap text-bg no-underline group-hover:block group-focus:block"
+        className="pointer-events-none invisible absolute bottom-full left-0 z-30 mb-1.5 translate-y-0.5 bg-fg px-2 py-1 text-[12.5px] whitespace-nowrap text-bg no-underline opacity-0 transition-[opacity,translate,visibility] duration-150 ease-out group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-hover:delay-200 group-focus:visible group-focus:translate-y-0 group-focus:opacity-100"
       >
         {exact}
       </span>
@@ -687,6 +1017,8 @@ function isText(message: ReactNode): message is string {
 
 interface Toast {
   id: number;
+  // True while the toast plays its exit.
+  closing?: boolean;
   tone: "success" | "error" | "info";
   message: ReactNode;
   action?: { label: string; href?: string; onClick?: () => void };
@@ -707,10 +1039,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [live, setLive] = useState("");
   const next = useRef(1);
 
-  const dismiss = useCallback(
-    (id: number) => setToasts((t) => t.filter((x) => x.id !== id)),
-    [],
-  );
+  // The toast goes out to the right edge, then leaves the list.
+  const dismiss = useCallback((id: number) => {
+    setToasts((t) => t.map((x) => (x.id === id ? { ...x, closing: true } : x)));
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), EXIT_MS);
+  }, []);
 
   const push = useCallback(
     (t: ToastInput) => {
@@ -740,12 +1073,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div aria-live="polite" className="sr-only">
         {live}
       </div>
-      <div className="fixed right-4 bottom-4 z-50 flex w-[min(380px,calc(100vw-32px))] flex-col gap-2">
+      <div className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(380px,calc(100vw-32px))] flex-col gap-2">
         {toasts.map((t) => (
           <div
             key={t.id}
+            data-state={t.closing ? "closed" : "open"}
             className={cx(
-              "flex items-center gap-2 border bg-raised py-2 pr-2 pl-2.5 shadow-[0_10px_30px_var(--shadow)]",
+              "fs-toast pointer-events-auto flex items-center gap-2 border bg-raised py-2 pr-2 pl-2.5 shadow-[0_10px_30px_var(--shadow)]",
               t.tone === "error" ? "border-red" : "border-line2",
             )}
           >
@@ -831,6 +1165,8 @@ export function Dialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  // The content stays while the dialog plays its exit.
+  const shown = usePresence(open);
   useEffect(() => {
     const d = ref.current;
 
@@ -853,10 +1189,10 @@ export function Dialog({
       onClick={(e) => {
         if (!locked && e.target === ref.current) onClose();
       }}
-      className="m-auto max-h-[calc(100vh-32px)] w-[calc(100vw-32px)] border border-line2 bg-bg p-0 text-fg shadow-[0_20px_50px_var(--shadow)] backdrop:bg-black/50"
+      className="fs-dialog m-auto max-h-[calc(100vh-32px)] w-[calc(100vw-32px)] border border-line2 bg-bg p-0 text-fg shadow-[0_20px_50px_var(--shadow)]"
       style={{ maxWidth: width }}
     >
-      {open && (
+      {shown && (
         <>
           <div
             id={titleId}
@@ -999,20 +1335,26 @@ export function SidePanel({
     return () => window.removeEventListener("keydown", fn);
   }, [open, onClose]);
 
-  if (!open) return null;
+  const shown = usePresence(open, 260);
+
+  if (!shown) return null;
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end">
+    <div
+      data-state={open ? "open" : "closed"}
+      className="fs-sheet fixed inset-0 z-40 flex justify-end"
+    >
       <button
         type="button"
         aria-label="Close panel"
-        className="absolute inset-0 border-0 bg-black/40"
+        tabIndex={open ? undefined : -1}
+        className="fs-scrim absolute inset-0 border-0 bg-black/40"
         onClick={onClose}
       />
       <aside
         role="dialog"
         aria-modal="true"
-        className="relative flex h-full w-full flex-col overflow-hidden border-l border-line2 bg-bg shadow-[0_20px_50px_var(--shadow)]"
+        className="fs-panel relative flex h-full w-full flex-col overflow-hidden border-l border-line2 bg-bg shadow-[0_20px_50px_var(--shadow)]"
         style={{ maxWidth: width }}
       >
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-line pr-2 pl-5">
@@ -1076,7 +1418,10 @@ export function MaskedSecret({
 
   return (
     <div className="flex h-10 items-center gap-1.5 border border-line pr-1 pl-3">
-      <code className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-fg2">
+      <code
+        key={String(shown)}
+        className="fs-fade min-w-0 flex-1 truncate font-mono text-[12.5px] text-fg2 transition-opacity"
+      >
         {shown ? secret : masked}
       </code>
       <IconButton
@@ -1108,11 +1453,17 @@ export function CodeBlock({
 }) {
   const [i, setI] = useState(0);
   const tab = tabs[Math.min(i, tabs.length - 1)]!;
+  const bar = useIndicator<HTMLDivElement>();
 
   return (
     <div className={cx("min-w-0 border border-line bg-panel", className)}>
       <div className="flex items-stretch border-b border-line">
-        <div role="tablist" className="flex min-w-0 overflow-x-auto">
+        <div
+          ref={bar}
+          role="tablist"
+          className="relative flex min-w-0 overflow-x-auto"
+        >
+          <Indicator />
           {tabs.map((t, n) => (
             <button
               key={t.label}
@@ -1122,9 +1473,7 @@ export function CodeBlock({
               onClick={() => setI(n)}
               className={cx(
                 "h-10 shrink-0 border-0 bg-transparent px-3.5 font-mono text-[12.5px] font-medium",
-                n === i
-                  ? "text-fg shadow-[inset_0_-2px_0_var(--accent)]"
-                  : "text-fg3 hover:text-fg",
+                n === i ? "text-fg" : "text-fg3 hover:text-fg",
               )}
             >
               {t.label}
@@ -1136,7 +1485,10 @@ export function CodeBlock({
           <CopyButton text={tab.code} label="Copy code" size={40} />
         </div>
       </div>
-      <pre className="m-0 overflow-x-auto px-4 py-3.5 font-mono text-[12.5px] leading-5">
+      <pre
+        key={tab.label}
+        className="fs-fade m-0 overflow-x-auto px-4 py-3.5 font-mono text-[12.5px] leading-5 transition-opacity"
+      >
         <Highlight code={tab.code} />
       </pre>
     </div>
@@ -1279,7 +1631,10 @@ export function Notice({
   return (
     <div
       role={tone === "red" ? "alert" : undefined}
-      className={cx("flex items-start gap-2.5 border px-3 py-2.5", className)}
+      className={cx(
+        "fs-enter flex items-start gap-2.5 border px-3 py-2.5",
+        className,
+      )}
       style={{
         borderColor: `color-mix(in oklab, ${color} 45%, var(--line))`,
         background: `color-mix(in oklab, ${color} 6%, transparent)`,
@@ -1315,7 +1670,7 @@ export function EmptyState({
   return (
     <div
       className={cx(
-        "flex flex-col items-start gap-2 px-4 py-10 md:px-8",
+        "fs-enter flex flex-col items-start gap-2 px-4 py-10 md:px-8",
         className,
       )}
     >
@@ -1347,7 +1702,7 @@ export function ErrorState({
   return (
     <div
       className={cx(
-        "flex flex-col items-start gap-2 px-4 py-10 md:px-8",
+        "fs-enter flex flex-col items-start gap-2 px-4 py-10 md:px-8",
         className,
       )}
     >
@@ -1429,6 +1784,8 @@ export function SkeletonBlock({
 declare module "react" {
   interface CSSProperties {
     "--cols"?: string;
+    // The place of an item in a staggered entry (see .fs-grow).
+    "--i"?: number;
   }
 }
 
@@ -1511,7 +1868,7 @@ export function TableRow({
           open();
       }}
       className={cx(
-        "grid grid-cols-1 gap-x-4 gap-y-1 border-b border-line px-4 py-3 md:items-center md:px-8 md:py-2 md:[grid-template-columns:var(--cols)]",
+        "fs-fade grid grid-cols-1 gap-x-4 gap-y-1 border-b border-line px-4 py-3 md:items-center md:px-8 md:py-2 md:[grid-template-columns:var(--cols)]",
         clickable &&
           "cursor-pointer hover:bg-hover hover:shadow-[inset_3px_0_0_var(--accent)] focus-visible:bg-hover focus-visible:shadow-[inset_3px_0_0_var(--accent)] focus-visible:outline-none",
         danger && "shadow-[inset_3px_0_0_var(--red)]",
@@ -1577,7 +1934,7 @@ export function FilterChip({
   onClear: () => void;
 }) {
   return (
-    <span className="flex h-8 items-center gap-1 border border-line2 bg-raised pl-2 font-mono text-[12px]">
+    <span className="fs-pop flex h-11 origin-left items-center gap-1 border border-line2 bg-raised pl-2 font-mono text-[12px] md:h-9">
       <span className="text-fg3">{name}</span> {value}
       <IconButton icon="close" label={`Clear ${name}`} onClick={onClear} />
     </span>

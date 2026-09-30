@@ -7,6 +7,7 @@ import {
   type SetupState,
 } from "../api";
 import {
+  AnimatedNumber,
   Badge,
   ButtonLink,
   cx,
@@ -28,6 +29,7 @@ const PERIODS: { value: Period; label: string }[] = [
   { value: "24h", label: "24 h" },
   { value: "7d", label: "7 d" },
   { value: "30d", label: "30 d" },
+  { value: "all", label: "all" },
 ];
 
 // Words for the period, used in the copy under the story.
@@ -35,6 +37,8 @@ const WORDS: Record<Period, { previous: string; squares: string }> = {
   "24h": { previous: "the day before", squares: "the last 24 hours'" },
   "7d": { previous: "last week", squares: "this week's" },
   "30d": { previous: "the 30 days before", squares: "the last 30 days'" },
+  // "all" has no period before it, so it shows no change.
+  all: { previous: "", squares: "all your" },
 };
 
 const STAT_LABELS = new Map([
@@ -72,15 +76,25 @@ const LEVEL_LABEL: Record<Exclude<RateLevel, null>, string> = {
 
 const cell = "border-line lg:border-r";
 
+// Formats for the animated numbers. A change is a percent with one digit.
+const pct1 = (v: number) => `${v.toFixed(1).replace(/\.0$/, "")}%`;
+
+const pct2 = (v: number) => percent(v, 2);
+
 export function Overview() {
   useTitle("Overview");
   const { session } = useSession();
   const [query, setQuery] = useQuery();
   const raw = query.get("period");
-  const period: Period = raw === "24h" || raw === "30d" ? raw : "7d";
 
+  const period: Period =
+    raw === "24h" || raw === "30d" || raw === "all" ? raw : "7d";
+
+  // The old period stays on screen while the new one loads. Each number,
+  // bar and square then moves to its new value, and nothing mounts again.
   const { data, error, loading, reload } = useApi<OverviewData>(
     `/overview${qs({ period })}`,
+    { keep: true },
   );
 
   if (error && !data)
@@ -96,69 +110,73 @@ export function Overview() {
 
   if (data.total_emails === 0 || !session.setup_completed) return <FirstRun />;
 
+  // One grid, so the right column (waffle, rates, domains) runs down the
+  // page without a break. The stats and the chart share the rows next to
+  // the rate cards. On a narrow screen the cells stack in this order.
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="grid flex-1 grid-cols-[minmax(0,1fr)] content-start lg:grid-cols-[minmax(0,1fr)_420px] lg:grid-rows-[auto_auto_auto_1fr] lg:[grid-template-areas:'story_waffle'_'stats_rates'_'chart_rates'_'fails_domains']">
       <Story
         data={data}
         period={period}
+        shown={data.period}
         onPeriod={(p) => setQuery({ period: p === "7d" ? null : p })}
       />
       <StatRow data={data} />
-      <section className="grid border-b border-line lg:grid-cols-[minmax(0,1fr)_420px]">
-        <div
-          className={cx(
-            cell,
-            "border-b px-4 pt-4.5 pb-5 md:px-8 lg:border-b-0",
-          )}
-        >
-          <Chart data={data} period={period} />
-        </div>
-        <div className="flex flex-col">
-          <RateCard
-            label="Bounce rate"
-            value={data.bounce_rate.value}
-            level={data.bounce_rate.level}
-            warn={0.02}
-            danger={0.04}
-            scale={0.06}
-            cols="2fr 2fr 2fr"
-            plain="Under 2%, mail providers trust you. Above 4%, they start delaying or rejecting your email."
-          />
-          <RateCard
-            label="Spam report rate"
-            value={data.complaint_rate.value}
-            level={data.complaint_rate.level}
-            warn={0.001}
-            danger={0.003}
-            scale={0.004}
-            cols="1fr 2fr 1fr"
-            plain={`Gmail and Yahoo block senders above 0.3%. ${
-              data.complaint_rate.level === "danger"
-                ? "You are above that."
-                : data.complaint_rate.level === "warning"
-                  ? "You are getting close."
-                  : "You are well below."
-            }`}
-          />
-        </div>
-      </section>
-      <section className="grid flex-1 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <Failures failures={data.recent_failures} />
-        <DomainsColumn domains={data.domains} />
-      </section>
+      <div
+        className={cx(
+          cell,
+          "border-b px-4 pt-4.5 pb-5 md:px-8 lg:[grid-area:chart]",
+        )}
+      >
+        <Chart data={data} period={data.period} />
+      </div>
+      <div className="flex flex-col border-b border-line lg:[grid-area:rates]">
+        <RateCard
+          label="Bounce rate"
+          value={data.bounce_rate.value}
+          level={data.bounce_rate.level}
+          warn={0.02}
+          danger={0.04}
+          scale={0.06}
+          cols="2fr 2fr 2fr"
+          plain="Under 2%, mail providers trust you. Above 4%, they start delaying or rejecting your email."
+        />
+        <RateCard
+          label="Spam report rate"
+          value={data.complaint_rate.value}
+          level={data.complaint_rate.level}
+          warn={0.001}
+          danger={0.003}
+          scale={0.004}
+          cols="1fr 2fr 1fr"
+          plain={`Gmail and Yahoo block senders above 0.3%. ${
+            data.complaint_rate.level === "danger"
+              ? "You are above that."
+              : data.complaint_rate.level === "warning"
+                ? "You are getting close."
+                : "You are well below."
+          }`}
+        />
+      </div>
+      <Failures failures={data.recent_failures} />
+      <DomainsColumn domains={data.domains} />
     </div>
   );
 }
 
 // The sentence, the numbers under it and the waffle.
 
+// `period` is the choice of the owner. `shown` is the period of the data
+// on screen. They differ while a new period loads.
 function Story({
   data,
   period,
+  shown,
   onPeriod,
 }: {
   data: OverviewData;
   period: Period;
+  shown: Period;
   onPeriod: (p: Period) => void;
 }) {
   const count = (t: string) => data.stats.find((s) => s.type === t);
@@ -169,7 +187,7 @@ function Story({
   const arrived = sent ? Math.round((delivered / sent) * 100) : 0;
   const spam = Math.round((data.complaint_rate.value ?? 0) * 10_000);
   const complained = count("complained")?.value ?? 0;
-  const words = WORDS[period];
+  const words = WORDS[shown];
 
   // Squares of the waffle: 1% each. A bounce always gets one square.
   let red = bounced ? Math.max(1, Math.round((bounced / sent) * 100)) : 0;
@@ -210,12 +228,13 @@ function Story({
     (d) => d.status !== "verified",
   ).length;
 
+  // Two cells of the page grid: the sentence and the waffle.
   return (
-    <section className="grid border-b border-line lg:grid-cols-[minmax(0,1fr)_420px]">
+    <>
       <div
         className={cx(
           cell,
-          "flex flex-col gap-4.5 px-4 pt-6 pb-7 md:px-8 md:pt-8",
+          "flex flex-col gap-4.5 border-b px-4 pt-6 pb-7 md:px-8 md:pt-8 lg:[grid-area:story]",
         )}
       >
         <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -226,7 +245,7 @@ function Story({
               aria-pressed={p.value === period}
               onClick={() => onPeriod(p.value)}
               className={cx(
-                "h-9 border bg-transparent px-2.5 font-mono text-[12px] font-medium",
+                "press h-9 border bg-transparent px-2.5 font-mono text-[12px] font-medium",
                 p.value === period
                   ? "border-fg2 text-fg"
                   : "border-line2 text-fg3 hover:text-fg",
@@ -254,20 +273,35 @@ function Story({
         ) : (
           <p className="m-0 max-w-[780px] text-[26px] leading-9 font-medium tracking-[-0.02em] text-pretty md:text-[34px] md:leading-11">
             You sent{" "}
-            <span className="font-mono font-semibold">{number(sent)}</span>{" "}
+            <AnimatedNumber value={sent} className="font-mono font-semibold" />{" "}
             {sent === 1 ? "email" : "emails"}.{" "}
             {/* A rate reads well only when the count is larger than its
                 base. Below that, show the counts. */}
             <span className="text-green">
-              {sent < 100
-                ? `${number(delivered)} arrived.`
-                : `${arrived} of every 100 arrived.`}
+              {sent < 100 ? (
+                <>
+                  <AnimatedNumber value={delivered} /> arrived.
+                </>
+              ) : (
+                <>
+                  <AnimatedNumber value={arrived} /> of every 100 arrived.
+                </>
+              )}
             </span>{" "}
             <span className="text-fg2">
-              {number(bounced)} bounced, and{" "}
-              {delivered < 10_000
-                ? `${number(complained)} ${complained === 1 ? "person" : "people"} marked you as spam.`
-                : `${spam} ${spam === 1 ? "person" : "people"} in 10,000 marked you as spam.`}
+              <AnimatedNumber value={bounced} /> bounced, and{" "}
+              {delivered < 10_000 ? (
+                <>
+                  <AnimatedNumber value={complained} />{" "}
+                  {complained === 1 ? "person" : "people"} marked you as spam.
+                </>
+              ) : (
+                <>
+                  <AnimatedNumber value={spam} />{" "}
+                  {spam === 1 ? "person" : "people"} in 10,000 marked you as
+                  spam.
+                </>
+              )}
             </span>
           </p>
         )}
@@ -278,8 +312,11 @@ function Story({
                 name={change > 0 ? "arrow-up" : "arrow-down"}
                 className={change > 0 ? "text-green" : "text-amber"}
               />
-              {Math.abs(change).toFixed(1).replace(/\.0$/, "")}%{" "}
-              {change > 0 ? "more" : "less"} than {words.previous}
+              {/* One span: a flex row drops a space between items. */}
+              <span>
+                <AnimatedNumber value={Math.abs(change)} format={pct1} />{" "}
+                {change > 0 ? "more" : "less"} than {words.previous}
+              </span>
             </span>
           )}
           {worst && (
@@ -300,7 +337,7 @@ function Story({
           )}
         </div>
       </div>
-      <div className="flex flex-col gap-3.5 px-4 py-6 md:px-8 md:py-7">
+      <div className="flex flex-col gap-3.5 border-b border-line px-4 py-6 md:px-8 md:py-7 lg:[grid-area:waffle]">
         <Waffle squares={squares} />
         <div className="flex flex-col gap-1 font-mono text-[12.5px]">
           <Legend color="var(--green)" label="arrived" n={delivered} />
@@ -311,15 +348,21 @@ function Story({
           Each square is 1% of {words.squares} email.
         </span>
       </div>
-    </section>
+    </>
   );
 }
 
 function Waffle({ squares }: { squares: string[] }) {
   return (
     <div aria-hidden className="grid grid-cols-[repeat(20,1fr)] gap-[3px]">
+      {/* The squares fill in reading order, and change color in the same
+          order when the period changes. */}
       {squares.map((c, i) => (
-        <span key={i} className="aspect-square" style={{ background: c }} />
+        <span
+          key={i}
+          className="aspect-square transition-[background-color,opacity] duration-300 ease-out starting:opacity-0 motion-reduce:delay-0!"
+          style={{ background: c, transitionDelay: `${i * 3}ms` }}
+        />
       ))}
     </div>
   );
@@ -338,7 +381,7 @@ function Legend({
     <span className="flex items-center gap-2">
       <span className="size-2.5" style={{ background: color }} />
       <span className="flex-1">{label}</span>
-      {number(n)}
+      <AnimatedNumber value={n} />
     </span>
   );
 }
@@ -350,17 +393,47 @@ function StatRow({ data }: { data: OverviewData }) {
   const delivered = data.stats.find((s) => s.type === "delivered")?.value ?? 0;
 
   return (
-    <div className="grid grid-cols-2 border-b border-line md:grid-cols-3 lg:grid-cols-6">
+    // The 1 px gaps show the line color: the rules between the cells.
+    <div
+      className={cx(
+        cell,
+        "grid grid-cols-2 gap-px border-b bg-line md:grid-cols-3 2xl:grid-cols-6 lg:[grid-area:stats]",
+      )}
+    >
       {data.stats.map((s) => {
-        const diff = s.value - s.previous;
+        // "all" has no period before it: the cell shows only the rate.
+        if (s.previous === null)
+          return (
+            <StatCell key={s.type} type={s.type} value={s.value}>
+              <span className="text-fg3">
+                {s.type === "sent" ? (
+                  "all time"
+                ) : (
+                  <Rate
+                    value={s.value}
+                    base={s.type === "complained" ? delivered : sent}
+                    type={s.type}
+                  />
+                )}
+              </span>
+            </StatCell>
+          );
+
+        const previous = s.previous;
+        const diff = s.value - previous;
         const bad = s.type === "bounced" || s.type === "complained";
         const counted = bad;
 
-        const delta = counted
-          ? number(Math.abs(diff))
-          : s.previous
-            ? `${(Math.abs(diff / s.previous) * 100).toFixed(1).replace(/\.0$/, "")}%`
-            : "new";
+        const delta = counted ? (
+          <AnimatedNumber value={Math.abs(diff)} />
+        ) : previous ? (
+          <AnimatedNumber
+            value={Math.abs(diff / previous) * 100}
+            format={pct1}
+          />
+        ) : (
+          "new"
+        );
 
         const tone =
           diff === 0 || (!bad && s.type !== "delivered")
@@ -369,40 +442,71 @@ function StatRow({ data }: { data: OverviewData }) {
               ? "text-red"
               : "text-green";
 
-        const rate =
-          s.type === "sent"
-            ? ""
-            : s.type === "complained"
-              ? percent(delivered ? s.value / delivered : null, 2)
-              : percent(
-                  sent ? s.value / sent : null,
-                  s.type === "bounced" ? 2 : 1,
-                );
-
         return (
-          <div
-            key={s.type}
-            className="flex flex-col gap-0.5 border-r border-b border-line py-3.5 pr-5 pl-4 md:pl-8 lg:border-b-0"
-          >
-            <span className="text-[13px] text-fg2">
-              {STAT_LABELS.get(s.type) ?? s.type}
-            </span>
-            <span className="font-mono text-[24px] leading-[30px] font-semibold tracking-[-0.03em]">
-              {number(s.value)}
-            </span>
-            <span
-              className={cx("flex items-center font-mono text-[12px]", tone)}
-            >
+          <StatCell key={s.type} type={s.type} value={s.value}>
+            <span className={cx("flex items-center", tone)}>
               {diff !== 0 && (
                 <Icon name={diff > 0 ? "arrow-up" : "arrow-down"} />
               )}
               {diff === 0 ? "no change" : delta}
-              <span className="ml-2 text-fg3">{rate}</span>
             </span>
-          </div>
+            {s.type !== "sent" && (
+              <span className="ml-2 text-fg3">
+                <Rate
+                  value={s.value}
+                  base={s.type === "complained" ? delivered : sent}
+                  type={s.type}
+                />
+              </span>
+            )}
+          </StatCell>
         );
       })}
     </div>
+  );
+}
+
+function StatCell({
+  type,
+  value,
+  children,
+}: {
+  type: string;
+  value: number;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5 bg-bg py-3.5 pr-5 pl-4 md:pl-8">
+      <span className="text-[13px] text-fg2">
+        {STAT_LABELS.get(type) ?? type}
+      </span>
+      <AnimatedNumber
+        value={value}
+        className="font-mono text-[24px] leading-[30px] font-semibold tracking-[-0.03em]"
+      />
+      <span className="flex items-center font-mono text-[12px]">
+        {children}
+      </span>
+    </div>
+  );
+}
+
+// The share of a count in its base: spam of delivered, others of sent.
+function Rate({
+  value,
+  base,
+  type,
+}: {
+  value: number;
+  base: number;
+  type: string;
+}) {
+  const digits = type === "complained" || type === "bounced" ? 2 : 1;
+
+  if (!base) return "-";
+
+  return (
+    <AnimatedNumber value={value / base} format={(v) => percent(v, digits)} />
   );
 }
 
@@ -410,8 +514,23 @@ function StatRow({ data }: { data: OverviewData }) {
 
 const BAR_AREA = 174;
 
-function bucketLabel(at: string, period: Period, i: number): string {
+function bucketLabel(
+  at: string,
+  period: Period,
+  i: number,
+  count: number,
+): string {
   const d = new Date(at);
+
+  // About 8 labels, whatever the number of bars.
+  if (period === "all")
+    return i % Math.max(1, Math.ceil(count / 8)) === 0
+      ? d.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        })
+      : "";
 
   if (period === "7d")
     return d
@@ -437,7 +556,19 @@ function Chart({ data, period }: { data: OverviewData; period: Period }) {
 
   const many = rows.length > 8;
   const gap: CSSProperties = { gap: many ? 3 : 18 };
-  const unit = period === "24h" ? "hour" : "day";
+
+  // "all" picks its bucket from its span: a day, a week or 30 days.
+  const step =
+    rows.length > 1 ? Date.parse(rows[1]!.at) - Date.parse(rows[0]!.at) : 0;
+
+  const unit =
+    period === "24h"
+      ? "hour"
+      : step >= 30 * 86_400_000
+        ? "month"
+        : step >= 7 * 86_400_000
+          ? "week"
+          : "day";
 
   return (
     <>
@@ -449,7 +580,7 @@ function Chart({ data, period }: { data: OverviewData; period: Period }) {
           <Key color="var(--red)" label="bounced" />
           <span className="flex items-center gap-1.5">
             <span className="w-3.5 border-t border-dashed border-fg3" />
-            average {number(average)}
+            average <AnimatedNumber value={average} />
           </span>
         </span>
       </div>
@@ -463,7 +594,7 @@ function Chart({ data, period }: { data: OverviewData; period: Period }) {
       >
         <div
           aria-hidden
-          className="absolute right-0 left-0 border-t border-dashed border-fg3"
+          className="absolute right-0 left-0 border-t border-dashed border-fg3 transition-[bottom] duration-[var(--dur-spring)] ease-[var(--spring)] starting:bottom-0! motion-reduce:transition-none"
           style={{ bottom: (average / max) * BAR_AREA }}
         />
         {rows.map((r, i) => {
@@ -472,11 +603,15 @@ function Chart({ data, period }: { data: OverviewData; period: Period }) {
           const seg = (n: number): CSSProperties => ({
             flex: `${n} 1 0`,
             minHeight: n > 0 ? 3 : 0,
+            transition:
+              "flex-grow var(--dur-spring) var(--spring), background-color 300ms var(--ease-out)",
           });
 
           return (
+            // Keyed by place, not by time: a new period moves the bars
+            // that stay, and only the extra bars grow in.
             <div
-              key={r.at}
+              key={i}
               title={`${r.at.slice(0, 16).replace("T", " ")} UTC: ${number(r.sent)} sent, ${number(r.delivered)} delivered, ${number(r.bounced)} bounced`}
               className="flex h-full flex-col justify-end gap-1.5"
             >
@@ -487,12 +622,15 @@ function Chart({ data, period }: { data: OverviewData; period: Period }) {
                     last ? "text-fg" : "text-fg3",
                   )}
                 >
-                  {number(r.sent)}
+                  <AnimatedNumber value={r.sent} />
                 </span>
               )}
               <div
-                className="flex flex-col gap-0.5"
-                style={{ height: Math.max(2, (r.sent / max) * BAR_AREA) }}
+                className="fs-grow flex flex-col gap-0.5"
+                style={{
+                  height: Math.max(2, (r.sent / max) * BAR_AREA),
+                  "--i": i,
+                }}
               >
                 {r.sent === 0 ? (
                   <span className="flex-1 bg-raised" />
@@ -528,10 +666,10 @@ function Chart({ data, period }: { data: OverviewData; period: Period }) {
       >
         {rows.map((r, i) => (
           <span
-            key={r.at}
+            key={i}
             className="overflow-visible text-center whitespace-nowrap"
           >
-            {bucketLabel(r.at, period, i)}
+            {bucketLabel(r.at, period, i, rows.length)}
           </span>
         ))}
       </div>
@@ -576,9 +714,15 @@ function RateCard({
       <div className="flex items-baseline justify-between">
         <span className="font-semibold">{label}</span>
         <span className="flex items-baseline gap-2">
-          <span className="font-mono text-[22px] font-semibold">
-            {percent(value, 2)}
-          </span>
+          {value === null ? (
+            <span className="font-mono text-[22px] font-semibold">-</span>
+          ) : (
+            <AnimatedNumber
+              value={value}
+              format={pct2}
+              className="font-mono text-[22px] font-semibold"
+            />
+          )}
           {level && (
             <Badge
               status="good"
@@ -597,7 +741,7 @@ function RateCard({
         </div>
         {value !== null && (
           <span
-            className="absolute -top-1 h-4 w-[3px] bg-fg"
+            className="absolute -top-1 h-4 w-[3px] bg-fg transition-[left] duration-[var(--dur-spring)] ease-[var(--spring)] starting:left-0! motion-reduce:transition-none"
             style={{ left: `${at}%` }}
           />
         )}
@@ -623,7 +767,7 @@ const FAIL_COLS = "90px 150px minmax(0,210px) minmax(0,1fr)";
 
 function Failures({ failures }: { failures: OverviewData["recent_failures"] }) {
   return (
-    <div className="border-line lg:border-r">
+    <div className="border-line lg:border-r lg:[grid-area:fails]">
       <div className="flex items-center justify-between border-b border-line px-4 py-3.5 md:px-8">
         <h2 className="m-0 text-[15px] font-semibold">Recent failures</h2>
         <Link
@@ -685,7 +829,7 @@ function domainNote(d: Domain): ReactNode {
 
 function DomainsColumn({ domains }: { domains: Domain[] }) {
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col lg:[grid-area:domains]">
       <div className="flex items-center justify-between border-y border-line px-4 py-3.5 md:px-8 lg:border-t-0">
         <h2 className="m-0 text-[15px] font-semibold">Domains</h2>
         <Link

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { api } from "../api";
 
 type Updater<T> = (prev: T | null) => T;
@@ -14,6 +20,8 @@ export interface Resource<T> {
   error: Error | null;
   // True after 150 ms without data. A fast load never shows a skeleton.
   loading: boolean;
+  // True while `keep` shows the data of the last path.
+  stale: boolean;
   reload: () => Promise<void>;
   setData: (fn: T | Updater<T>) => void;
 }
@@ -25,8 +33,13 @@ interface Loaded<T> {
 }
 
 // Loads a dashboard API path. A null path loads nothing. The data stays
-// on screen while a reload runs.
-export function useApi<T>(path: string | null): Resource<T> {
+// on screen while a reload runs. With `keep`, the data of the last path
+// also stays while a new path loads, so the screen can animate from the
+// old values to the new values.
+export function useApi<T>(
+  path: string | null,
+  { keep = false }: { keep?: boolean } = {},
+): Resource<T> {
   const [state, setState] = useState<Loaded<T>>({
     key: null,
     data: null,
@@ -85,10 +98,13 @@ export function useApi<T>(path: string | null): Resource<T> {
     [path],
   );
 
+  const stale = keep && !current && state.data !== null;
+
   return {
-    data: current ? state.data : null,
+    data: current || stale ? state.data : null,
     error: current ? state.error : null,
-    loading: Boolean(path) && !current && slowKey === path,
+    stale,
+    loading: Boolean(path) && !current && !stale && slowKey === path,
     reload,
     setData,
   };
@@ -168,4 +184,53 @@ export function useTitle(title: string) {
   useEffect(() => {
     document.title = title ? `${title} · fullsend` : "fullsend";
   }, [title]);
+}
+
+// The time that an exit animation plays. Keep it equal to --dur-exit in
+// index.css, plus a little.
+export const EXIT_MS = 200;
+
+// True while `open` is true, and for EXIT_MS after it becomes false. An
+// element keeps its content while it plays the exit animation. The
+// element sets data-state="closed" when `open` is false. When `open`
+// becomes true again during the exit, the element stays and the CSS
+// transition goes back from where it is.
+export function usePresence(open: boolean, ms = EXIT_MS): boolean {
+  const [shown, setShown] = useState(open);
+
+  if (open && !shown) setShown(true);
+
+  useEffect(() => {
+    if (open || !shown) return;
+    const t = setTimeout(() => setShown(false), ms);
+
+    return () => clearTimeout(t);
+  }, [open, shown, ms]);
+
+  return shown;
+}
+
+// Calls onClose on a pointer down outside `ref` while `open` is true. For
+// popovers and dropdowns. A click inside does not close them.
+export function useDismiss(
+  ref: RefObject<HTMLElement | null>,
+  open: boolean,
+  onClose: () => void,
+) {
+  const fn = useRef(onClose);
+  useEffect(() => {
+    fn.current = onClose;
+  });
+  useEffect(() => {
+    if (!open) return;
+
+    const down = (e: PointerEvent) => {
+      if (e.target instanceof Node && ref.current?.contains(e.target)) return;
+      fn.current();
+    };
+
+    document.addEventListener("pointerdown", down);
+
+    return () => document.removeEventListener("pointerdown", down);
+  }, [open, ref]);
 }

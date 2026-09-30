@@ -305,15 +305,13 @@ export function StepDomain({ flow }: { flow: Flow }) {
               <Field label="Zone">
                 <Select
                   value={zone.id}
-                  onChange={(e) => setZonePick(e.target.value)}
+                  onChange={setZonePick}
                   className="h-10"
-                >
-                  {zones.data?.data.map((z) => (
-                    <option key={z.id} value={z.id}>
-                      {z.name}
-                    </option>
-                  ))}
-                </Select>
+                  options={(zones.data?.data ?? []).map((z) => ({
+                    value: z.id,
+                    label: z.name,
+                  }))}
+                />
               </Field>
               <Field label="Send from" error={error}>
                 <span className="flex h-10 items-center border border-line2 bg-panel px-2.5 font-mono text-[13px] focus-within:border-accent-fg focus-within:shadow-[0_0_0_2px_color-mix(in_oklab,var(--accent)_30%,transparent)]">

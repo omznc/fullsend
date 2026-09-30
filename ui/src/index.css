@@ -83,6 +83,50 @@
   --color-shadow: var(--shadow);
 }
 
+/* Motion. All UI motion uses one spring: critically damped, with no
+   overshoot. The curve is x(t) = 1 - (1 + wt) e^(-wt), sampled to the
+   point where it settles. A spring with the response r settles in
+   about 1.5 r, so --dur-spring (450 ms) is a spring with r = 0.3 s. CSS
+   transitions start from the current value, so a new target can
+   interrupt each motion at any time. */
+:root {
+  --spring: linear(
+    0 0%,
+    0.002 0.6%,
+    0.013 1.9%,
+    0.044 3.6%,
+    0.097 5.7%,
+    0.173 8.1%,
+    0.265 10.9%,
+    0.366 13.9%,
+    0.471 17.2%,
+    0.571 20.8%,
+    0.661 24.6%,
+    0.74 28.7%,
+    0.806 33%,
+    0.859 37.5%,
+    0.9 42.2%,
+    0.93 47.1%,
+    0.953 52.3%,
+    0.969 57.6%,
+    0.98 63.1%,
+    0.987 68.8%,
+    0.992 74.7%,
+    0.995 80.8%,
+    0.997 87%,
+    0.998 93.4%,
+    1 100%
+  );
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --dur-press: 90ms;
+  --dur-fast: 150ms;
+  --dur-spring: 450ms;
+  /* An exit is short: the owner already decided. usePresence in
+     src/lib/hooks.ts keeps the element for this time. */
+  --dur-exit: 180ms;
+}
+
 @layer base {
   html,
   body {
@@ -101,6 +145,22 @@
   :focus-visible {
     outline: 2px solid var(--accent-fg);
     outline-offset: 2px;
+  }
+  /* Hover and state colors ease in. A press (see `press`) is instant. */
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  [role="row"],
+  [role="option"] {
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      box-shadow var(--dur-fast) var(--ease-out),
+      opacity var(--dur-fast) var(--ease-out),
+      scale var(--dur-spring) var(--spring);
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]) {
@@ -122,4 +182,262 @@
 @utility tint-* {
   background: color-mix(in oklab, --value(--color-*) 13%, transparent);
   color: --value(--color-*);
+}
+
+/* Press feedback on pointer down. The release springs back. */
+@utility press {
+  &:active:not(:disabled) {
+    scale: 0.97;
+    transition: scale var(--dur-press) var(--ease-out);
+  }
+}
+
+@utility press-icon {
+  &:active:not(:disabled) {
+    scale: 0.86;
+    transition: scale var(--dur-press) var(--ease-out);
+  }
+}
+
+/* A floating bar over content that scrolls under it. */
+@utility material {
+  background: color-mix(in oklab, var(--bg) 84%, transparent);
+  backdrop-filter: blur(14px) saturate(160%);
+}
+
+/* Enter and exit states. An element with one of these classes starts
+   from its hidden state when it mounts (@starting-style). With
+   data-state="closed", it goes back to the hidden state along the same
+   path. */
+
+/* New content: fade in and rise 4 px. */
+.fs-enter {
+  transition:
+    opacity 220ms var(--ease-out),
+    translate var(--dur-spring) var(--spring);
+
+  @starting-style {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+/* New rows in a list: fade only, so a long list does not move. */
+.fs-fade {
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+/* A popover or a dropdown. It grows from its trigger: set the
+   transform-origin (origin-top-left, origin-top-right) on the element. */
+.fs-pop {
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    scale var(--dur-spring) var(--spring),
+    translate var(--dur-spring) var(--spring);
+
+  @starting-style {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 -4px;
+  }
+
+  &[data-state="closed"] {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 -4px;
+    pointer-events: none;
+    transition-duration: var(--dur-exit);
+    transition-timing-function: var(--ease-in);
+  }
+}
+
+/* A glyph that swaps (a checkbox, a toggle, a copy check). Key the icon
+   on its state so that it mounts again. */
+.fs-swap {
+  display: inline-block;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    scale var(--dur-spring) var(--spring);
+
+  @starting-style {
+    opacity: 0.4;
+    scale: 0.7;
+  }
+}
+
+/* A modal <dialog>. It opens with a spring and closes with a short
+   fade. `overlay` and `display` keep it in the top layer while it
+   closes. --enter-y sets the direction: the command palette comes down
+   from the search bar. */
+.fs-dialog {
+  opacity: 0;
+  translate: 0 var(--enter-y, 8px);
+  scale: 0.98;
+  transition:
+    opacity var(--dur-exit) var(--ease-in),
+    translate var(--dur-exit) var(--ease-in),
+    scale var(--dur-exit) var(--ease-in),
+    overlay var(--dur-exit) allow-discrete,
+    display var(--dur-exit) allow-discrete;
+
+  /* A closed dialog can still show while it fades. It takes no click. */
+  &:not([open]) {
+    pointer-events: none;
+  }
+
+  &[open] {
+    opacity: 1;
+    translate: 0;
+    scale: 1;
+    transition:
+      opacity 200ms var(--ease-out),
+      translate var(--dur-spring) var(--spring),
+      scale var(--dur-spring) var(--spring),
+      overlay var(--dur-spring) allow-discrete,
+      display var(--dur-spring) allow-discrete;
+
+    @starting-style {
+      opacity: 0;
+      translate: 0 var(--enter-y, 8px);
+      scale: 0.98;
+    }
+  }
+
+  &::backdrop {
+    background: rgb(0 0 0 / 0);
+    transition:
+      background-color var(--dur-exit) var(--ease-in),
+      overlay var(--dur-exit) allow-discrete,
+      display var(--dur-exit) allow-discrete;
+  }
+
+  &[open]::backdrop {
+    background: rgb(0 0 0 / 0.5);
+    transition-duration: 220ms;
+    transition-timing-function: var(--ease-out);
+  }
+
+  @starting-style {
+    &[open]::backdrop {
+      background: rgb(0 0 0 / 0);
+    }
+  }
+}
+
+/* A side panel. It comes in from the right edge and goes out to the
+   right edge. The scrim fades. */
+.fs-sheet {
+  & > .fs-scrim {
+    transition: opacity 240ms var(--ease-out);
+
+    @starting-style {
+      opacity: 0;
+    }
+  }
+
+  & > .fs-panel {
+    transition: translate var(--dur-spring) var(--spring);
+
+    @starting-style {
+      translate: 100% 0;
+    }
+  }
+
+  &[data-state="closed"] {
+    pointer-events: none;
+
+    & > .fs-scrim {
+      opacity: 0;
+      transition-duration: var(--dur-exit);
+    }
+
+    & > .fs-panel {
+      translate: 100% 0;
+      transition: translate 240ms var(--ease-in);
+    }
+  }
+}
+
+/* A toast comes in from the right edge and goes out the same way. */
+.fs-toast {
+  transition:
+    opacity 200ms var(--ease-out),
+    translate var(--dur-spring) var(--spring);
+
+  @starting-style {
+    opacity: 0;
+    translate: 24px 0;
+  }
+
+  &[data-state="closed"] {
+    opacity: 0;
+    translate: 24px 0;
+    transition-duration: var(--dur-exit);
+    transition-timing-function: var(--ease-in);
+  }
+}
+
+/* The bar under the current tab. useIndicator in ui.tsx moves it with
+   translateX and scaleX. It gets a transition only after the first
+   placement, so the page does not open with a slide. */
+[data-indicator][data-ready] {
+  transition:
+    transform var(--dur-spring) var(--spring),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+/* A chart bar grows up from the axis. --i gives a short stagger. */
+.fs-grow {
+  transform-origin: bottom;
+  transition:
+    scale var(--dur-spring) var(--spring),
+    height var(--dur-spring) var(--spring);
+  transition-delay: calc(var(--i, 0) * 14ms);
+
+  @starting-style {
+    scale: 1 0;
+  }
+}
+
+/* Reduced motion: no slide, no scale, no stagger. The fades stay,
+   because they tell the owner what changed. */
+@media (prefers-reduced-motion: reduce) {
+  .press,
+  .press-icon,
+  .fs-enter,
+  .fs-pop,
+  .fs-swap,
+  .fs-dialog,
+  .fs-panel,
+  .fs-toast,
+  .fs-grow {
+    translate: none !important;
+    scale: none !important;
+    transition-delay: 0s !important;
+  }
+
+  .fs-sheet > .fs-panel {
+    transition: opacity 200ms var(--ease-out);
+
+    @starting-style {
+      opacity: 0;
+    }
+  }
+
+  .fs-sheet[data-state="closed"] > .fs-panel {
+    opacity: 0;
+  }
+
+  [data-indicator][data-ready] {
+    transition: opacity var(--dur-fast) var(--ease-out);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .material {
+    background: var(--bg);
+    backdrop-filter: none;
+  }
 }
