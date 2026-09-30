@@ -7,6 +7,11 @@
 
 fullsend is an email API runs completely on Cloudflare. Supports the `resend` SDK for sending, so it's more or less a drop in replacement..
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/overview-dark.png">
+  <img src="docs/overview-light.png" alt="The fullsend dashboard overview, with example data">
+</picture>
+
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/omznc/fullsend)
 
 ## Deploy
