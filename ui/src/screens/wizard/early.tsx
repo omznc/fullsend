@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { api, type CloudflareStatus, type Domain, type Probe } from "../../api";
 import {
+  CF_PERMISSIONS,
+  cloudflareCheck,
+  type Fix,
+  fixedIn,
+  HowToFix,
+  permName,
+} from "../../components/fix";
+import {
   Badge,
   CopyButton,
   ErrorState,
@@ -16,34 +24,6 @@ import { useApi, useNow } from "../../lib/hooks";
 import { Hint, type Flow, Mono, NeedDomain, Rows, StepFrame } from "./parts";
 
 // Steps 1 to 4: the token, the domain, the DNS records, the events.
-
-const PERMS: {
-  key: keyof NonNullable<CloudflareStatus["permissions"]>;
-  name: string;
-  use: string;
-}[] = [
-  { key: "zone_read", name: "Zone · Zone · Read", use: "to list your zones" },
-  {
-    key: "email_sending",
-    name: "Account · Email Sending · Edit",
-    use: "to add sending domains",
-  },
-  {
-    key: "queues",
-    name: "Account · Queues · Edit",
-    use: "to receive delivery events",
-  },
-  {
-    key: "access",
-    name: "Account · Access: Apps and Policies · Edit",
-    use: "to protect the dashboard",
-  },
-  {
-    key: "workers_scripts",
-    name: "Account · Workers Scripts · Edit",
-    use: "to attach hostnames",
-  },
-];
 
 // Step 1: the Cloudflare connection
 
@@ -63,7 +43,15 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
 
   const d = cf.data;
   const perms = d?.permissions;
-  const missing = perms ? PERMS.filter((p) => !perms[p.key].ok).length : 0;
+
+  const missing = perms
+    ? CF_PERMISSIONS.filter((p) => !perms[p.key].ok).length
+    : 0;
+
+  // The "how to fix" check. It also updates this step.
+  const checkFor = (fix: Fix) =>
+    cloudflareCheck(cf.setData, (next) => fixedIn(fix, next));
+
   // Zone Read and Email Sending are the two that a domain needs.
   const ready = Boolean(perms?.zone_read.ok && perms.email_sending.ok);
 
@@ -104,6 +92,11 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
           <Notice tone="amber" title="No Cloudflare token">
             fullsend cannot reach Cloudflare without a token. You can still add
             domains by hand.
+            <HowToFix
+              fix={{ kind: "token_missing" }}
+              check={checkFor({ kind: "token_missing" })}
+              className="mt-1.5 block"
+            />
           </Notice>
           <Hint title="Set the token">
             <span>
@@ -113,7 +106,9 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
             </span>
             <span>
               The token needs these permissions: Email Sending Edit, Zone Read,
-              Queues Edit, Access: Apps and Policies Edit, Workers Scripts Edit.
+              Queues Edit, Access: Apps and Policies Edit, Access:
+              Organizations, Identity Providers, and Groups Read, Workers
+              Scripts Edit.
             </span>
           </Hint>
         </>
@@ -121,6 +116,11 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
         <>
           <Notice tone="red" title="Cloudflare refused the token">
             {d.error ?? "The token is not valid."}
+            <HowToFix
+              fix={{ kind: "token_invalid" }}
+              check={checkFor({ kind: "token_invalid" })}
+              className="mt-1.5 block"
+            />
           </Notice>
           <Hint>
             Check <Mono>CF_API_TOKEN</Mono> and <Mono>CF_ACCOUNT_ID</Mono>, then
@@ -151,9 +151,10 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
                 <Badge status="active" label="valid" />
               )}
             </div>
-            {PERMS.map((p) => {
+            {CF_PERMISSIONS.map((p) => {
               const probe: Probe | undefined = perms?.[p.key];
               const ok = probe?.ok;
+              const fix: Fix = { kind: "permissions", missing: [p.key] };
 
               return (
                 <div
@@ -165,11 +166,20 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
                     className={ok ? "text-green" : "text-red"}
                   />
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="font-mono text-[12.5px]">{p.name}</span>
+                    <span className="font-mono text-[12.5px]">
+                      {permName(p)}
+                    </span>
                     {!ok && probe?.error && (
                       <span className="text-[12px] text-fg3 [overflow-wrap:anywhere]">
                         {probe.error}
                       </span>
+                    )}
+                    {!ok && (
+                      <HowToFix
+                        fix={fix}
+                        check={checkFor(fix)}
+                        className="mt-0.5"
+                      />
                     )}
                   </span>
                   <span

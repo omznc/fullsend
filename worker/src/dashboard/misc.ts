@@ -344,20 +344,31 @@ miscRoutes.get("/cloudflare", async (c) => {
     zoneId = (await cf.zones())[0]?.id ?? null;
   });
 
-  const [email_sending, queues, access, workers_scripts] = await Promise.all([
-    zoneId
-      ? probe(() => cf.sendingDomains(zoneId!))
-      : Promise.resolve({ ok: false, error: "no zone to check" }),
-    probe(() => cf.queueId(c.env.EVENTS_QUEUE_NAME)),
-    probe(() => cf.accessOrganization()),
-    probe(() => cf.workerDomains(c.env.WORKER_NAME)),
-  ]);
+  // Access has two permissions: "Apps and Policies" for the apps, and
+  // "Organizations, Identity Providers, and Groups" for the team domain.
+  const [email_sending, queues, access, access_org, workers_scripts] =
+    await Promise.all([
+      zoneId
+        ? probe(() => cf.sendingDomains(zoneId!))
+        : Promise.resolve({ ok: false, error: "no zone to check" }),
+      probe(() => cf.queueId(c.env.EVENTS_QUEUE_NAME)),
+      probe(() => cf.accessApps()),
+      probe(() => cf.accessOrganization()),
+      probe(() => cf.workerDomains(c.env.WORKER_NAME)),
+    ]);
 
   return c.json({
     token_set: true,
     valid: true,
     account,
-    permissions: { zone_read, email_sending, queues, access, workers_scripts },
+    permissions: {
+      zone_read,
+      email_sending,
+      queues,
+      access,
+      access_org,
+      workers_scripts,
+    },
   });
 });
 

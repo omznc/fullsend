@@ -6,6 +6,13 @@ import {
   type Settings as SettingsData,
 } from "../api";
 import {
+  CF_PERMISSIONS,
+  cloudflareCheck,
+  type Fix,
+  fixedIn,
+  HowToFix,
+} from "../components/fix";
+import {
   Badge,
   Button,
   ButtonLink,
@@ -237,20 +244,18 @@ function Appearance() {
   );
 }
 
-const PERMISSIONS: [
-  keyof NonNullable<CloudflareStatus["permissions"]>,
-  string,
-][] = [
-  ["zone_read", "Zone read"],
-  ["email_sending", "Email Sending"],
-  ["queues", "Queues"],
-  ["access", "Access apps"],
-  ["workers_scripts", "Workers scripts"],
-];
-
 function CloudflareSection() {
   const cf = useApi<CloudflareStatus>("/cloudflare");
   const d = cf.data;
+  const perms = d?.permissions;
+
+  const missing = perms
+    ? CF_PERMISSIONS.filter((p) => !perms[p.key].ok).map((p) => p.key)
+    : [];
+
+  // The "how to fix" check. It also updates this section.
+  const checkFor = (fix: Fix) =>
+    cloudflareCheck(cf.setData, (next) => fixedIn(fix, next));
 
   return (
     <Section
@@ -284,6 +289,12 @@ function CloudflareSection() {
                   label={d.valid ? "valid" : "invalid"}
                 />
                 {d.error && <span className="text-red">{d.error}</span>}
+                {!d.valid && (
+                  <HowToFix
+                    fix={{ kind: "token_invalid" }}
+                    check={checkFor({ kind: "token_invalid" })}
+                  />
+                )}
               </>
             ) : (
               <>
@@ -291,13 +302,17 @@ function CloudflareSection() {
                 <span className="text-fg2">
                   Set CF_API_TOKEN and CF_ACCOUNT_ID as Worker secrets.
                 </span>
+                <HowToFix
+                  fix={{ kind: "token_missing" }}
+                  check={checkFor({ kind: "token_missing" })}
+                />
               </>
             )}
           </Row>
-          {d.permissions && (
+          {perms && (
             <Row label="Permissions">
-              {PERMISSIONS.map(([k, label]) => {
-                const p = d.permissions![k];
+              {CF_PERMISSIONS.map(({ key: k, label }) => {
+                const p = perms[k];
 
                 return (
                   <span
@@ -314,6 +329,12 @@ function CloudflareSection() {
                   </span>
                 );
               })}
+              {missing.length > 0 && (
+                <HowToFix
+                  fix={{ kind: "permissions", missing }}
+                  check={checkFor({ kind: "permissions", missing })}
+                />
+              )}
             </Row>
           )}
           <Row label="Setup wizard">

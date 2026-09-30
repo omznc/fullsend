@@ -70,6 +70,7 @@ describe("dashboard auth", () => {
     expect(access.status).toBe(200);
     expect(await access.json()).toMatchObject({
       automatic: false,
+      fix: "token_missing",
       public_paths: expect.arrayContaining(["/emails", "/t"]),
     });
 

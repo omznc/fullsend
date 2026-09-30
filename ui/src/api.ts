@@ -314,9 +314,12 @@ export interface CloudflareStatus {
     email_sending: Probe;
     queues: Probe;
     access: Probe;
+    access_org: Probe;
     workers_scripts: Probe;
   } | null;
 }
+
+export type PermKey = keyof NonNullable<CloudflareStatus["permissions"]>;
 
 export type HostnameStatus = "unset" | "active" | "unknown" | "missing";
 
@@ -364,6 +367,10 @@ export interface SetupState {
 export interface AccessInfo {
   automatic: boolean;
   reason: string | null;
+  // Which "how to fix" steps apply. Null for an unknown error.
+  fix: "token_missing" | "token_invalid" | "permissions" | null;
+  // The permissions that the token does not have, for "permissions".
+  missing: PermKey[];
   team_domain: string | null;
   hostname: string;
   hostname_is_workers_dev: boolean;

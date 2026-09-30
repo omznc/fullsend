@@ -112,6 +112,11 @@ setupRoutes.post("/setup/unlock", async (c) => {
   return c.json({ ok: true });
 });
 
+const ACCESS_PERMISSION = {
+  access: "Access: Apps and Policies Edit",
+  access_org: "Access: Organizations, Identity Providers, and Groups Read",
+};
+
 // Tells the UI if fullsend can make the Access applications itself.
 setupRoutes.get("/setup/access", requireSetup, async (c) => {
   const settings = await getSettings(c.env);
@@ -119,25 +124,62 @@ setupRoutes.get("/setup/access", requireSetup, async (c) => {
   let automatic = false;
   let teamDomain: string | null = null;
   let reason: string | null = null;
+  // Tells the UI which "how to fix" steps to show. Null for an unknown error.
+  let fix: "token_missing" | "token_invalid" | "permissions" | null = null;
+  // The permission keys of GET /api/cloudflare that the token does not have.
+  const missing: ("access" | "access_org")[] = [];
 
   if (!hasToken(c.env)) {
     reason = "CF_API_TOKEN or CF_ACCOUNT_ID is not set.";
+    fix = "token_missing";
   } else {
-    try {
-      const org = await new Cloudflare(c.env).accessOrganization();
-      teamDomain = org.auth_domain;
+    const cf = new Cloudflare(c.env);
+
+    // The team domain needs "Access: Organizations, Identity Providers, and
+    // Groups". The apps need "Access: Apps and Policies".
+    const [org, apps] = await Promise.allSettled([
+      cf.accessOrganization(),
+      cf.accessApps(),
+    ]);
+
+    if (org.status === "fulfilled" && apps.status === "fulfilled") {
+      teamDomain = org.value.auth_domain;
       automatic = true;
-    } catch (err) {
-      reason =
-        err instanceof CloudflareError
-          ? `The token cannot read Zero Trust: ${err.message}. It needs Access: Apps and Policies Edit.`
-          : String(err);
+    } else {
+      const err: unknown = [org, apps].find(
+        (r): r is PromiseRejectedResult => r.status === "rejected",
+      )?.reason;
+
+      if (err instanceof CloudflareError) {
+        // Cloudflare gives the same "Authentication error" for a bad token
+        // and for a missing permission. A token check tells them apart.
+        const valid = await cf.verifyToken().then(
+          () => true,
+          () => false,
+        );
+
+        if (valid) {
+          if (org.status === "rejected") missing.push("access_org");
+
+          if (apps.status === "rejected") missing.push("access");
+          const names = missing.map((k) => ACCESS_PERMISSION[k]).join(" and ");
+          reason = `The token cannot use Zero Trust: ${err.message}. It needs ${names}.`;
+          fix = "permissions";
+        } else {
+          reason = `Cloudflare refused the token: ${err.message}.`;
+          fix = "token_invalid";
+        }
+      } else {
+        reason = String(err);
+      }
     }
   }
 
   return c.json({
     automatic,
     reason,
+    fix,
+    missing,
     team_domain: teamDomain,
     hostname: host,
     hostname_is_workers_dev: host.endsWith(".workers.dev"),

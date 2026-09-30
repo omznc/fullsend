@@ -6,7 +6,8 @@ SETUP_TOKEN=
 # openssl rand -hex 32. Signs tracking links and dashboard sessions.
 SESSION_SECRET=
 # Permissions: Email Sending Edit, Zone Read, Queues Edit,
-# Access: Apps and Policies Edit, Workers Scripts Edit.
+# Access: Apps and Policies Edit, Access: Organizations, Identity
+# Providers, and Groups Read, Workers Scripts Edit.
 CF_API_TOKEN=
 # The account of CF_API_TOKEN.
 CF_ACCOUNT_ID=

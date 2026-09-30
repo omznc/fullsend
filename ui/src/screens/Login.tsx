@@ -1,5 +1,6 @@
 import { type FormEvent, type ReactNode, useState } from "react";
-import { api, ApiRequestError, type Session } from "../api";
+import { type AccessInfo, api, ApiRequestError, type Session } from "../api";
+import { type Fix, HowToFix } from "../components/fix";
 import {
   Button,
   ButtonLink,
@@ -8,7 +9,7 @@ import {
   Input,
   Logo,
   Notice,
-  Skeleton,
+  SkeletonBlock,
   errorText,
 } from "../components/ui";
 import { useApi, useNow, useTitle } from "../lib/hooks";
@@ -248,14 +249,11 @@ interface ManualAccessBody {
   hostname?: string;
 }
 
-interface AccessInfo {
-  automatic: boolean;
-  reason: string | null;
-  team_domain: string | null;
-  hostname: string;
-  hostname_is_workers_dev: boolean;
-  public_paths: string[];
-}
+// The "how to fix" steps for the fix code of /setup/access.
+const accessFix = (data: AccessInfo): Fix | null =>
+  data.fix === "permissions"
+    ? { kind: "permissions", missing: data.missing }
+    : data.fix && { kind: data.fix };
 
 function AccessSetup({
   session,
@@ -264,7 +262,22 @@ function AccessSetup({
   session: Session;
   reload: () => Promise<void>;
 }) {
-  const { data, error, reload: retry } = useApi<AccessInfo>("/setup/access");
+  const {
+    data,
+    error,
+    reload: retry,
+    setData,
+  } = useApi<AccessInfo>("/setup/access");
+
+  // Loads the Access state again. The form changes to the automatic setup
+  // when the token can make the apps.
+  const recheck = async () => {
+    const next = await api<AccessInfo>("/setup/access");
+    setData(next);
+
+    return next.automatic;
+  };
+
   // null: follow what the Worker says. true: the owner chose the manual steps.
   const [forceManual, setForceManual] = useState<boolean | null>(null);
   const [done, setDone] = useState<SetupResult | null>(null);
@@ -302,9 +315,9 @@ function AccessSetup({
   if (!data)
     return (
       <Layout hero={HERO.auto} session={session}>
-        <Skeleton className="h-[30px] w-3/4" />
-        <Skeleton className="h-10 w-full" />
-        <Skeleton className="h-10 w-full" />
+        <SkeletonBlock className="h-[30px] w-3/4" />
+        <SkeletonBlock className="h-10 w-full" />
+        <SkeletonBlock className="h-10 w-full" />
       </Layout>
     );
 
@@ -335,6 +348,7 @@ function AccessSetup({
           data={data}
           session={session}
           reload={reload}
+          recheck={recheck}
           onDone={(url) => setDone({ ok: true, steps: [], login_url: url })}
         />
       ) : (
@@ -543,11 +557,13 @@ function ManualForm({
   data,
   session,
   reload,
+  recheck,
   onDone,
 }: {
   data: AccessInfo;
   session: Session;
   reload: () => Promise<void>;
+  recheck: () => Promise<boolean>;
   onDone: (loginUrl: string) => void;
 }) {
   const [team, setTeam] = useState(data.team_domain ?? "");
@@ -557,6 +573,7 @@ function ManualForm({
   const [message, setMessage] = useState<string | null>(null);
   const host = data.hostname_is_workers_dev ? "" : data.hostname;
   const audOff = touched && aud.trim() !== "" && aud.trim().length !== 64;
+  const fix = accessFix(data);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -636,6 +653,9 @@ function ManualForm({
       {data.reason && (
         <Notice tone="blue" title="Why not automatic">
           {data.reason}
+          {fix && (
+            <HowToFix fix={fix} check={recheck} className="mt-1.5 block" />
+          )}
         </Notice>
       )}
       <div className="flex gap-2">

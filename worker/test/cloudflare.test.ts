@@ -448,6 +448,50 @@ describe("automatic Access setup", () => {
     return (res.headers.get("Set-Cookie") ?? "").split(";")[0]!;
   }
 
+  it("tells a missing Access permission from a bad token", async () => {
+    const cookie = await unlock();
+
+    const access = async () =>
+      (
+        await request("/api/setup/access", { headers: { Cookie: cookie } })
+      ).json();
+
+    fake = fakeCloudflare({
+      [`GET /accounts/${ACCOUNT}/tokens/verify`]: {
+        id: "t1",
+        status: "active",
+      },
+    });
+    expect(await access()).toMatchObject({
+      automatic: false,
+      fix: "permissions",
+      missing: ["access_org", "access"],
+    });
+
+    // Apps and Policies alone is not enough: the team domain needs the
+    // organization permission.
+    fake.restore();
+    fake = fakeCloudflare({
+      [`GET /accounts/${ACCOUNT}/tokens/verify`]: {
+        id: "t1",
+        status: "active",
+      },
+      [`GET /accounts/${ACCOUNT}/access/apps`]: [],
+    });
+    expect(await access()).toMatchObject({
+      automatic: false,
+      fix: "permissions",
+      missing: ["access_org"],
+    });
+
+    fake.restore();
+    fake = fakeCloudflare({});
+    expect(await access()).toMatchObject({
+      automatic: false,
+      fix: "token_invalid",
+    });
+  });
+
   it("attaches the hostname and makes the two Access applications", async () => {
     const apps: JsonObject[] = [];
     fake = fakeCloudflare({
