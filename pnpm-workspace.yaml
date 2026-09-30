@@ -1,0 +1,12 @@
+packages:
+  - worker
+  - ui
+allowBuilds:
+  esbuild: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - "@cloudflare/workers-types@5.20260930.1"
+  - hono@4.13.12
+  - miniflare@5.20260926.1-alpha
+  - resend@6.31.0
+  - wrangler@4.144.0

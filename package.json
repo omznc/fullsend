@@ -1,0 +1,57 @@
+{
+  "name": "fullsend",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter @fullsend/ui build",
+    "deploy": "pnpm run db:migrate && wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply DB --remote",
+    "dev": "wrangler dev",
+    "dev:ui": "pnpm --filter @fullsend/ui dev",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "oxlint --fix && oxfmt",
+    "lint:ci": "oxlint && oxfmt --check",
+    "format": "oxfmt"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.86.0",
+    "oxfmt": "0.71.0",
+    "oxlint": "1.86.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.144.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@11.24.0",
+  "cloudflare": {
+    "bindings": {
+      "SETUP_TOKEN": {
+        "description": "A long random string, for example from `openssl rand -hex 24`. It opens the first setup of the dashboard one time. Keep it until the setup is done."
+      },
+      "SESSION_SECRET": {
+        "description": "Generate it with `openssl rand -hex 32`. It signs the click tracking links and the dashboard sessions."
+      },
+      "CF_API_TOKEN": {
+        "description": "Optional, but without it each step is manual. A [Cloudflare API token](https://dash.cloudflare.com/profile/api-tokens) with these permissions: **Email Sending Edit**, **Zone Read**, **Queues Edit**, **Access: Apps and Policies Edit**, **Workers Scripts Edit**."
+      },
+      "CF_ACCOUNT_ID": {
+        "description": "The ID of the account of `CF_API_TOKEN`."
+      },
+      "AUTH_MODE": {
+        "description": "Leave it empty for Cloudflare Access (the default). Set `password` only for an account without Zero Trust."
+      },
+      "ADMIN_PASSWORD": {
+        "description": "Only for `AUTH_MODE=password`: the dashboard password. The password login also needs `SESSION_SECRET`. Leave it empty for Cloudflare Access."
+      },
+      "WORKER_NAME": {
+        "description": "The name of this Worker. Change it if you change the Worker name in this form."
+      },
+      "EVENTS_QUEUE_NAME": {
+        "description": "The name of the events queue. Change it if you change the name of the `fullsend-events` queue in this form."
+      }
+    }
+  }
+}

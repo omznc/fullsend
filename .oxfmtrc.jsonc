@@ -1,0 +1,27 @@
+{
+  "useTabs": false,
+  "tabWidth": 2,
+  "printWidth": 80,
+  "singleQuote": false,
+  "trailingComma": "all",
+  "semi": true,
+  "arrowParens": "always",
+  "sortImports": { "newlinesBetween": false },
+  "ignorePatterns": [
+    "**/node_modules",
+    "**/dist",
+    "**/.wrangler",
+    "worker/migrations",
+    "worker/worker-configuration.d.ts",
+    "pnpm-lock.yaml",
+    // Vendored upstream source, kept byte-identical.
+    "tools/oxlint/anti-slop",
+    "**/.claude"
+  ],
+  "overrides": [
+    {
+      "files": ["**/*.jsonc"],
+      "options": { "trailingComma": "none" }
+    }
+  ]
+}

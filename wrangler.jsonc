@@ -1,0 +1,73 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fullsend",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-08-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "ui/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Every request goes to the Worker first. The Worker checks the
+    // dashboard auth, then serves the UI through env.ASSETS.
+    "run_worker_first": true
+  },
+  "send_email": [{ "name": "EMAIL" }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fullsend",
+      "migrations_dir": "worker/migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "BODIES", "bucket_name": "fullsend-bodies" }],
+  "queues": {
+    "producers": [
+      { "binding": "SEND_QUEUE", "queue": "fullsend-send" },
+      { "binding": "HOOKS_QUEUE", "queue": "fullsend-hooks" },
+      // Cloudflare Email Service writes to this queue, not the Worker. The
+      // binding is here because the deploy creates a queue only when a
+      // producer binding names it. Without it, the deploy stops on a new
+      // account with "Queue fullsend-events does not exist".
+      { "binding": "EVENTS_QUEUE", "queue": "fullsend-events" }
+    ],
+    "consumers": [
+      {
+        "queue": "fullsend-send",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1,
+        "max_retries": 5
+      },
+      {
+        "queue": "fullsend-events",
+        "max_batch_size": 50,
+        "max_batch_timeout": 5,
+        "max_retries": 10
+      },
+      {
+        "queue": "fullsend-hooks",
+        "max_batch_size": 20,
+        "max_batch_timeout": 2,
+        "max_retries": 8
+      }
+    ]
+  },
+  "ratelimits": [
+    {
+      "name": "RATE_LIMITER",
+      "namespace_id": "1850",
+      // 100 requests in 10 seconds: 10 requests per second, the Resend
+      // default. A key with a higher limit uses more than one bucket.
+      "simple": { "limit": 100, "period": 10 }
+    }
+  ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "vars": {
+    "WORKER_NAME": "fullsend",
+    "EVENTS_QUEUE_NAME": "fullsend-events"
+  }
+}
