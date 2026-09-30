@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-fullsend is an email API runs completely on Cloudflare. Supports the `resend` SDK for sending, so it's a drop-in replacement (with certain limitations).
+fullsend is an email API that runs completely on Cloudflare. Supports the `resend` SDK for sending, so it's a drop-in replacement (with certain limitations).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/overview-dark.png">
