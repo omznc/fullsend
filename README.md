@@ -79,7 +79,7 @@ git clone git@github.com:<you>/fullsend.git && cd fullsend
 git fetch https://github.com/omznc/fullsend.git main
 OLD=$(git log -1 --format=%s | grep -o '[0-9a-f]\{7,\}$')
 NEW=$(git rev-parse --short FETCH_HEAD)
-git diff "$OLD" "$NEW" | git apply --index
+git diff --binary "$OLD" "$NEW" | git apply --index
 git commit -m "update to omznc/fullsend $NEW"
 git push
 ```
