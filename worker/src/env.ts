@@ -28,8 +28,12 @@ export interface Env {
   WORKER_NAME: string;
   EVENTS_QUEUE_NAME: string;
 
+  // Optional overrides. Without them, fullsend makes its own values and
+  // keeps them in D1 (src/lib/secrets.ts).
   SETUP_TOKEN?: string;
   SESSION_SECRET?: string;
+  // The first setup writes these two as Worker secrets from the token
+  // that the owner pastes (POST /api/setup/token).
   CF_API_TOKEN?: string;
   CF_ACCOUNT_ID?: string;
   // Only "dev", for a local dashboard without a login. The first setup

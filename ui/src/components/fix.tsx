@@ -1,10 +1,17 @@
-import { type ReactNode, useState } from "react";
-import { api, type CloudflareStatus, type PermKey } from "../api";
+import { type FormEvent, type ReactNode, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  api,
+  ApiRequestError,
+  type CloudflareStatus,
+  type PermKey,
+} from "../api";
 import { useInterval } from "../lib/hooks";
 import {
   Button,
-  CopyValue,
   Dialog,
+  Field,
+  Input,
   Notice,
   TextLink,
   errorText,
@@ -129,7 +136,7 @@ export const TOKEN_TEMPLATE_URL = `https://dash.cloudflare.com/?to=/:account/api
   ),
 )}&name=fullsend`;
 
-const WORKERS_URL =
+export const WORKERS_URL =
   "https://dash.cloudflare.com/?to=/:account/workers-and-pages";
 
 const ZERO_TRUST_URL = "https://one.dash.cloudflare.com/";
@@ -207,48 +214,53 @@ export function HowToFix({
       >
         {label}
       </button>
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title={TITLE[fix.kind]}
-        width={560}
-        footer={
-          <>
-            <span
-              aria-live="polite"
-              className="mr-auto self-center font-mono text-[12px] text-fg3"
-            >
-              {busy
-                ? "checking"
-                : checkedAt
-                  ? `not fixed yet · checked ${new Date(checkedAt).toLocaleTimeString()}`
-                  : `checks again every ${EVERY_MS / 1000} seconds`}
+      {/* A portal, because the link can be in a form, and the dialog has
+          the token form. */}
+      {createPortal(
+        <Dialog
+          open={open}
+          onClose={() => setOpen(false)}
+          title={TITLE[fix.kind]}
+          width={560}
+          footer={
+            <>
+              <span
+                aria-live="polite"
+                className="mr-auto self-center font-mono text-[12px] text-fg3"
+              >
+                {busy
+                  ? "checking"
+                  : checkedAt
+                    ? `not fixed yet · checked ${new Date(checkedAt).toLocaleTimeString()}`
+                    : `checks again every ${EVERY_MS / 1000} seconds`}
+              </span>
+              <Button onClick={() => setOpen(false)}>close</Button>
+              <Button
+                variant="primary"
+                icon="reload"
+                busy={busy}
+                onClick={() => void run()}
+              >
+                check again
+              </Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <FixSteps fix={fix} />
+            <span>
+              You do not need to deploy again. This dialog closes when the check
+              passes.
             </span>
-            <Button onClick={() => setOpen(false)}>close</Button>
-            <Button
-              variant="primary"
-              icon="reload"
-              busy={busy}
-              onClick={() => void run()}
-            >
-              check again
-            </Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-3">
-          <FixSteps fix={fix} />
-          <span>
-            You do not need to deploy again. This dialog closes when the check
-            passes.
-          </span>
-          {error && (
-            <Notice tone="red" title="The check failed">
-              {error}
-            </Notice>
-          )}
-        </div>
-      </Dialog>
+            {error && (
+              <Notice tone="red" title="The check failed">
+                {error}
+              </Notice>
+            )}
+          </div>
+        </Dialog>,
+        document.body,
+      )}
     </>
   );
 }
@@ -284,13 +296,14 @@ function FixSteps({ fix }: { fix: Fix }) {
             token value does not change, so the Worker secrets stay the same.
           </li>
         </Ol>
-        <span>
+        <div>
           You can also{" "}
           <TextLink href={TOKEN_TEMPLATE_URL}>
             make a new token from the template
           </TextLink>{" "}
-          and put its value in the <Code>CF_API_TOKEN</Code> secret.
-        </span>
+          and paste it here. fullsend replaces the old one.
+          <TokenForm />
+        </div>
         {(fix.missing.includes("access") ||
           fix.missing.includes("access_org")) && (
           <Notice tone="blue" title="No Zero Trust on the account?">
@@ -305,16 +318,23 @@ function FixSteps({ fix }: { fix: Fix }) {
   }
 
   return (
-    <Ol>
-      {fix.kind === "token_invalid" ? (
-        <li>
+    <>
+      {fix.kind === "token_invalid" && (
+        <span>
           Cloudflare refused the token. It is possible that someone deleted or
-          rolled the token, that it expired, or that <Code>CF_ACCOUNT_ID</Code>{" "}
-          is for a different account. Open{" "}
-          <TextLink href={TOKENS_URL}>API Tokens</TextLink> and find the token.
-          If it is gone, make a new one as in the next steps.
-        </li>
-      ) : null}
+          rolled the token, or that it expired. Make a new token and paste it
+          here. fullsend replaces the old one.
+        </span>
+      )}
+      <TokenSteps />
+    </>
+  );
+}
+
+// The steps that make a token from the template and connect it.
+export function TokenSteps({ onSaved }: { onSaved?: () => void }) {
+  return (
+    <Ol>
       <li>
         Open the <TextLink href={TOKEN_TEMPLATE_URL}>token template</TextLink>.
         It fills in the permissions of fullsend. If Cloudflare asks for an
@@ -330,19 +350,106 @@ function FixSteps({ fix }: { fix: Fix }) {
         token value.
       </li>
       <li>
-        Copy the account ID. It is on the account home page (
-        <TextLink href={ACCOUNT_ID_URL}>where to find it</TextLink>).
-      </li>
-      <li>
-        Open <TextLink href={WORKERS_URL}>Workers &amp; Pages</TextLink>, then
-        the fullsend Worker. Go to <b>Settings</b>, then{" "}
-        <b>Variables and Secrets</b>. Add two values of the type <b>Secret</b>:
-        <span className="mt-1.5 flex flex-col gap-1">
-          <CopyValue value="CF_API_TOKEN" />
-          <CopyValue value="CF_ACCOUNT_ID" />
-        </span>
+        Paste the token here. fullsend saves it as a secret of this Worker.
+        <TokenForm onSaved={onSaved} />
       </li>
     </Ol>
+  );
+}
+
+// Sends a pasted token to the Worker. The Worker checks that the account
+// of the token runs this Worker, then writes the CF_API_TOKEN and
+// CF_ACCOUNT_ID secrets.
+function TokenForm({ onSaved }: { onSaved?: () => void }) {
+  const [token, setToken] = useState("");
+  const [account, setAccount] = useState("");
+  const [askAccount, setAskAccount] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setBusy(true);
+    setError(null);
+    const accountId = account.trim();
+
+    api("/setup/token", {
+      method: "POST",
+      body: accountId ? { token, account_id: accountId } : { token },
+    })
+      .then(() => {
+        setSaved(true);
+        setBusy(false);
+        onSaved?.();
+
+        return undefined;
+      })
+      .catch((cause: unknown) => {
+        if (
+          cause instanceof ApiRequestError &&
+          cause.code === "account_unknown"
+        )
+          setAskAccount(true);
+        setError(errorText(cause));
+        setBusy(false);
+      });
+  }
+
+  if (saved)
+    return (
+      <Notice tone="green" className="mt-1.5">
+        The token is saved. Cloudflare deploys the new secrets. This takes some
+        seconds.
+      </Notice>
+    );
+
+  return (
+    <form onSubmit={submit} className="mt-1.5 flex flex-col gap-3">
+      <Field label="Cloudflare token" error={askAccount ? null : error}>
+        <Input
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          invalid={Boolean(error) && !askAccount}
+          autoComplete="off"
+          spellCheck={false}
+          className="h-11 md:h-10"
+        />
+      </Field>
+      {askAccount && (
+        <Field
+          label="Account ID"
+          error={error}
+          hint={
+            <>
+              On the account home page (
+              <TextLink href={ACCOUNT_ID_URL}>where to find it</TextLink>)
+            </>
+          }
+        >
+          <Input
+            value={account}
+            onChange={(e) => setAccount(e.target.value)}
+            invalid={Boolean(error)}
+            autoComplete="off"
+            spellCheck={false}
+            className="h-11 font-mono md:h-10"
+          />
+        </Field>
+      )}
+      <Button
+        type="submit"
+        variant="primary"
+        icon="link"
+        busy={busy}
+        disabled={!token.trim()}
+        className="h-11 w-full justify-center text-[13px] md:h-10"
+      >
+        connect the token
+      </Button>
+    </form>
   );
 }
 
@@ -353,10 +460,6 @@ function Ol({ children }: { children: ReactNode }) {
     </ol>
   );
 }
-
-const Code = ({ children }: { children: ReactNode }) => (
-  <code className="font-mono text-fg">{children}</code>
-);
 
 function PermTable({ rows }: { rows: typeof CF_PERMISSIONS }) {
   return (

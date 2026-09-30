@@ -1,15 +1,16 @@
 # The Deploy to Cloudflare button shows each key in this file as a required
-# field. Put only required secrets here.
+# field. fullsend needs no secret at deploy time, so every key here is a
+# comment. Copy this file to .dev.vars for local work.
 #
-# Opens the first setup, one time. Any long random string.
-SETUP_TOKEN=
-# openssl rand -hex 32. Signs tracking links and dashboard sessions.
-SESSION_SECRET=
-# Permissions: Email Sending Edit, Zone Read, Queues Edit,
-# Access: Apps and Policies Edit, Access: Organizations, Identity
-# Providers, and Groups Read, Workers Scripts Edit.
-CF_API_TOKEN=
-# The account of CF_API_TOKEN.
-CF_ACCOUNT_ID=
-# For a local dashboard without a login, add AUTH_MODE=dev to your
-# .dev.vars. The first setup chooses Access or a password, not this file.
+# Optional overrides. Without them, fullsend makes its own values and keeps
+# them in D1.
+# SETUP_TOKEN=    opens the first setup in place of the generated setup code
+# SESSION_SECRET= signs the click tracking links and the dashboard sessions
+#
+# The first setup writes these two as Worker secrets from the token that the
+# owner pastes. A local dev server cannot do that, so set them here.
+# CF_API_TOKEN=
+# CF_ACCOUNT_ID=
+#
+# For a local dashboard without a login, add AUTH_MODE=dev. The first setup
+# chooses Access or a password, not this file.

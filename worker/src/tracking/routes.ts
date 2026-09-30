@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { recordEvent } from "../events/record";
+import { sessionSecret } from "../lib/secrets";
 import { parseAddressColumn } from "../send/consumer";
 import { botReason } from "./bots";
 import { checkLink } from "./sign";
@@ -83,9 +84,12 @@ trackingRoutes.on(["GET", "HEAD"], "/c/:id", async (c) => {
   const id = c.req.param("id");
   const url = c.req.query("u");
   const sig = c.req.query("s");
-  const secret = c.env.SESSION_SECRET;
 
-  if (!url || !sig || !secret || !(await checkLink(secret, id, url, sig))) {
+  if (
+    !url ||
+    !sig ||
+    !(await checkLink(await sessionSecret(c.env), id, url, sig))
+  ) {
     return c.text("This link is not valid.", 400);
   }
 

@@ -4,8 +4,8 @@ export interface TrackingOptions {
   origin: string;
   emailId: string;
   open: boolean;
-  // Null turns click tracking off: without SESSION_SECRET, fullsend
-  // cannot sign the links.
+  // The key that signs the links (sessionSecret). Null turns click
+  // tracking off.
   clickSecret: string | null;
 }
 

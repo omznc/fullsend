@@ -125,14 +125,18 @@ formats Markdown and JSON. `worker/migrations`, `pnpm-lock.yaml` and
   runs the real `resend` SDK against the Worker.
 - **`rpc.d.ts` at the root is a public contract.** Callers copy it. Change
   it together with `worker/src/rpc.ts`.
-- **A new secret goes in three places:** `worker/src/env.ts`,
-  `.dev.vars.example`, and the `cloudflare.bindings` block in the root
-  `package.json` (the text of the deploy form).
 - **The deploy form makes each key in `.dev.vars.example` a required
   field.** The form has no optional secret, no dropdown and no conditional
-  field. Put an optional setting in `vars` in `wrangler.jsonc` with a
+  field. Keep the form empty: every key in `.dev.vars.example` is a
+  comment. Put an optional setting in `vars` in `wrangler.jsonc` with a
   default. Put a choice of the owner in the first setup and store it in the
   D1 settings. The dashboard login (Access or a password) works this way.
+- **fullsend makes its own secrets.** `worker/src/lib/secrets.ts` makes the
+  session secret and the setup code and keeps them in D1. The first setup
+  writes `CF_API_TOKEN` and `CF_ACCOUNT_ID` as Worker secrets from the
+  token that the owner pastes (`POST /api/setup/token`). A new optional
+  secret goes in `worker/src/env.ts` and as a comment in
+  `.dev.vars.example`.
 
 ## Gotchas
 

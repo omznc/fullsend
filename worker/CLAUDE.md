@@ -60,14 +60,22 @@ first.
 - **The `api_key_id` column is not always a key id.** It can hold
   `rpc:<caller>` or `dashboard:<identity>` (`src/db/schema.ts`).
 - **The first setup chooses the dashboard login.** The `auth_mode` and
-  `password_hash` settings hold the choice, not env vars. The setup token
-  opens the setup only while `setupOpen()` in `src/dashboard/auth.ts` is
+  `password_hash` settings hold the choice, not env vars. The setup code
+  or a pasted Cloudflare token opens the setup only while `setupOpen()` in `src/dashboard/auth.ts` is
   true: no Access and no password yet. `AUTH_MODE` in env is only for
   `dev`. A session key also holds the password hash, so a new password
   ends the old sessions.
-- **`SESSION_SECRET` signs the dashboard sessions and the click links.** A
-  setup token can fall back to `SETUP_TOKEN` as its key. A session token
-  cannot (`signingKey` in `src/dashboard/auth.ts`).
+- **The session secret signs the dashboard sessions, the setup cookie and
+  the click links.** `sessionSecret()` in `src/lib/secrets.ts` returns
+  `SESSION_SECRET`, or a value that it makes one time and keeps in D1.
+  `setupCode()` does the same for `SETUP_TOKEN`. The Worker logs the code
+  while the dashboard is locked. These D1 rows are not in `DEFAULTS`, so
+  `getSettings` never returns them.
+- **A pasted token must prove the ownership.** `POST /setup/token` in
+  `src/dashboard/setup.ts` accepts the token only when its account serves
+  the request host: `<WORKER_NAME>.<subdomain>.workers.dev`, or a custom
+  domain of the Worker. Then it writes the Worker secrets. Cloudflare
+  deploys a new version, so the secrets reach requests some seconds later.
 - **Settings are rows in the `settings` table** (`src/lib/settings.ts`).
   `getSettingsCached` can be 30 seconds old in one isolate. Add a new key to
   `DEFAULTS`: `getSettings` ignores a key that is not there.
@@ -77,8 +85,8 @@ first.
 
 `src/env.ts` is the hand-written `Env`. There is no generated
 `worker-configuration.d.ts`. A new binding goes in the root
-`wrangler.jsonc` and in `src/env.ts`. A new secret also goes in
-`.dev.vars.example` and in `cloudflare.bindings` of the root `package.json`.
+`wrangler.jsonc` and in `src/env.ts`. A new optional secret also goes
+as a comment in `.dev.vars.example`.
 
 ## Database
 
@@ -101,7 +109,7 @@ first.
 - The Cloudflare API has no live calls in tests. `test/cloudflare.test.ts`
   replaces `globalThis.fetch` with a fake that fails on an unknown route.
 - The test host is not `localhost`, so `AUTH_MODE=dev` does not work
-  there. `test/dashboard.test.ts` uses the setup token flow, or Access
+  there. `test/dashboard.test.ts` uses the setup code flow, or Access
   settings that it inserts into D1.
 - D1 keeps its rows between the tests of one file. A test that needs a
   fresh setup deletes the `settings` rows first.

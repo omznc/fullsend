@@ -5,6 +5,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 import type { Env } from "../env";
 import { hmac, safeEqual, toBase64Url } from "../lib/crypto";
+import { sessionSecret } from "../lib/secrets";
 import { getSettings, type Settings } from "../lib/settings";
 
 // Dashboard auth:
@@ -46,15 +47,17 @@ export const accessConfigured = (s: Settings) =>
 
 export type TokenKind = "setup" | "admin";
 
-// A setup token can use SETUP_TOKEN as the key when SESSION_SECRET is not
-// set. A session token needs SESSION_SECRET: a person with the setup token
-// must not be able to make a session. The key of a session token also holds
-// the password hash, so a new password ends all old sessions.
-function signingKey(env: Env, kind: TokenKind, bind: string): string | null {
-  if (kind === "admin")
-    return env.SESSION_SECRET ? `${env.SESSION_SECRET}:${bind}` : null;
+// Both kinds use the session secret (sessionSecret). The key of a session
+// token also holds the password hash, so a new password ends all old
+// sessions.
+async function signingKey(
+  env: Env,
+  kind: TokenKind,
+  bind: string,
+): Promise<string> {
+  const secret = await sessionSecret(env);
 
-  return env.SESSION_SECRET || env.SETUP_TOKEN || null;
+  return kind === "admin" ? `${secret}:${bind}` : secret;
 }
 
 // A signed value: "<payload>.<expiry>.<mac>".
@@ -64,9 +67,7 @@ export async function signToken(
   ttlSeconds: number,
   bind = "",
 ): Promise<string> {
-  const key = signingKey(env, kind, bind);
-
-  if (!key) throw new Error("SESSION_SECRET is not set");
+  const key = await signingKey(env, kind, bind);
   const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
   const body = `${toBase64Url(new TextEncoder().encode(kind))}.${exp}`;
 
@@ -80,9 +81,8 @@ export async function readToken(
   token: string | undefined,
   bind = "",
 ): Promise<boolean> {
-  const key = signingKey(env, kind, bind);
-
-  if (!token || !key) return false;
+  if (!token) return false;
+  const key = await signingKey(env, kind, bind);
   const parts = token.split(".");
 
   const [payload, exp, mac] = parts;
@@ -139,7 +139,8 @@ export interface Session {
   mode: AuthMode;
   accessConfigured: boolean;
   identity: string | null;
-  // The owner entered the setup token, and Access is not set up yet.
+  // The owner proved the ownership (a Cloudflare token or the setup code),
+  // and the setup is still open.
   setup: boolean;
 }
 
@@ -228,7 +229,7 @@ export const requireSetup = createMiddleware<DashVars>(async (c, next) => {
   }
 
   return c.json(
-    { error: "unauthorized", message: "Enter the setup token first." },
+    { error: "unauthorized", message: "Unlock the setup first." },
     401,
   );
 });

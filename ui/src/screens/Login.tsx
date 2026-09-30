@@ -1,6 +1,6 @@
 import { type FormEvent, type ReactNode, useState } from "react";
 import { type AccessInfo, api, ApiRequestError, type Session } from "../api";
-import { type Fix, HowToFix } from "../components/fix";
+import { type Fix, HowToFix, TokenSteps, WORKERS_URL } from "../components/fix";
 import {
   Button,
   ButtonLink,
@@ -10,9 +10,10 @@ import {
   Logo,
   Notice,
   SkeletonBlock,
+  TextLink,
   errorText,
 } from "../components/ui";
-import { useApi, useNow, useTitle } from "../lib/hooks";
+import { useApi, useInterval, useNow, useTitle } from "../lib/hooks";
 import { isBoolean, isJsonObject, isString, type JsonValue } from "../lib/json";
 
 // The sign-in and setup screen. The Worker decides the state:
@@ -148,7 +149,8 @@ function SmallLink({
   );
 }
 
-// The setup token form.
+// The first unlock. A Cloudflare token proves the ownership and connects
+// the token in one step. The setup code in the Worker logs is the fallback.
 function Locked({
   session,
   reload,
@@ -156,9 +158,55 @@ function Locked({
   session: Session;
   reload: () => Promise<void>;
 }) {
+  const [saved, setSaved] = useState(false);
+  const [code, setCode] = useState(false);
+
+  // After the save, wait for the Worker version that has the secrets.
+  useInterval(
+    () => {
+      api<{ token_set: boolean }>("/setup/token")
+        .then((r) => (r.token_set ? reload() : undefined))
+        .catch(() => undefined);
+    },
+    saved ? 2000 : null,
+  );
+
+  if (code)
+    return (
+      <CodeForm session={session} reload={reload} back={() => setCode(false)} />
+    );
+
+  return (
+    <Layout hero={HERO.locked} session={session}>
+      <Heading title="Unlock this deploy">
+        Connect a Cloudflare token of the account that runs this Worker. The
+        token proves that you own this deploy. fullsend also uses it to set up
+        domains and Access.
+      </Heading>
+      <TokenSteps onSaved={() => setSaved(true)} />
+      <SmallLink onClick={() => setCode(true)}>
+        {session.setup_token_set
+          ? "Use the setup token instead"
+          : "Use a setup code instead"}
+      </SmallLink>
+    </Layout>
+  );
+}
+
+// The fallback: the setup code from the Worker logs, or SETUP_TOKEN.
+function CodeForm({
+  session,
+  reload,
+  back,
+}: {
+  session: Session;
+  reload: () => Promise<void>;
+  back: () => void;
+}) {
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const own = session.setup_token_set;
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -174,21 +222,21 @@ function Locked({
 
   return (
     <Layout hero={HERO.locked} session={session}>
-      <Heading title="Unlock this deploy">
-        Paste the setup token of this Worker. It proves you own this deploy.
+      <Heading title="Unlock with a code">
+        {own ? (
+          "Enter the SETUP_TOKEN secret of this Worker."
+        ) : (
+          <>
+            The Worker writes a setup code to its logs. Open{" "}
+            <TextLink href={WORKERS_URL}>Workers &amp; Pages</TextLink>, then
+            this Worker, then <b>Logs</b>. Find the line{" "}
+            <code className="font-mono text-fg">fullsend setup code</code>. If
+            the line is not there, reload this page.
+          </>
+        )}
       </Heading>
-      {!session.setup_token_set && (
-        <Notice tone="amber">
-          SETUP_TOKEN is not set on the Worker. Set the secret, then reload this
-          page.
-        </Notice>
-      )}
       <form onSubmit={submit} className="flex flex-col gap-4.5">
-        <Field
-          label="Setup token"
-          error={error}
-          hint="The SETUP_TOKEN secret that you set when you deployed"
-        >
+        <Field label={own ? "Setup token" : "Setup code"} error={error}>
           <Input
             value={token}
             onChange={(e) => setToken(e.target.value)}
@@ -196,7 +244,7 @@ function Locked({
             autoComplete="off"
             spellCheck={false}
             autoFocus
-            className="h-11 md:h-10"
+            className="h-11 font-mono md:h-10"
           />
         </Field>
         <Button
@@ -210,6 +258,7 @@ function Locked({
           unlock
         </Button>
       </form>
+      <SmallLink onClick={back}>Use a Cloudflare token instead</SmallLink>
     </Layout>
   );
 }
@@ -681,8 +730,8 @@ function ManualForm({
 
 const MIN_PASSWORD = 12;
 
-// The password login, in place of Access. After this step, the setup token
-// opens nothing.
+// The password login, in place of Access. After this step, the setup code
+// and a pasted token open nothing.
 function PasswordSetup() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");

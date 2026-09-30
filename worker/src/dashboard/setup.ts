@@ -5,6 +5,7 @@ import { hashPassword, safeEqual, verifyPassword } from "../lib/crypto";
 import { validation } from "../lib/errors";
 import { asRecord, isHostname, readJson } from "../lib/http";
 import { isString } from "../lib/json";
+import { setupCode } from "../lib/secrets";
 import { getSettings, type Settings, setSettings } from "../lib/settings";
 import {
   type DashVars,
@@ -52,12 +53,18 @@ setupRoutes.get("/session", async (c) => {
   else if (session.accessConfigured) state = "login";
   else state = session.setup ? "access_setup" : "locked";
 
+  // The owner reads the setup code in the Worker logs. A SETUP_TOKEN that
+  // the owner set is not a secret for fullsend to print.
+  if (state === "locked" && !c.env.SETUP_TOKEN)
+    console.log(`fullsend setup code: ${await setupCode(c.env)}`);
+
   return c.json({
     state,
     mode: session.mode,
     identity: session.identity,
     access_configured: session.accessConfigured,
     setup_token_set: Boolean(c.env.SETUP_TOKEN),
+    cloudflare_token_set: hasToken(c.env),
     setup_completed: settings.setup_completed === "true",
     deploy_name: settings.deploy_name,
     worker_url: new URL(c.req.url).origin,
@@ -77,27 +84,26 @@ setupRoutes.post("/setup/unlock", async (c) => {
       {
         error: "setup_done",
         message:
-          "The login is set up. The setup token no longer opens anything.",
+          "The login is set up. The setup code no longer opens anything.",
       },
       403,
     );
   }
 
-  const expected = c.env.SETUP_TOKEN;
+  const expected = await setupCode(c.env);
 
-  if (!expected) {
-    return c.json(
-      {
-        error: "no_setup_token",
-        message: "SETUP_TOKEN is not set on the Worker.",
-      },
-      403,
-    );
-  }
+  // The generated code is upper case with dashes. Accept it as typed.
+  const given = isString(body.token)
+    ? c.env.SETUP_TOKEN
+      ? body.token.trim()
+      : body.token.trim().toUpperCase()
+    : "";
 
-  if (!isString(body.token) || !safeEqual(body.token.trim(), expected)) {
+  if (!given || !safeEqual(given, expected)) {
+    await new Promise((r) => setTimeout(r, 500));
+
     return c.json(
-      { error: "invalid_token", message: "The setup token is not correct." },
+      { error: "invalid_token", message: "The setup code is not correct." },
       403,
     );
   }
@@ -111,6 +117,149 @@ setupRoutes.post("/setup/unlock", async (c) => {
 
   return c.json({ ok: true });
 });
+
+// Tells if the Worker of this account serves the host of the request: its
+// workers.dev URL, or a custom domain that is attached to it.
+async function servesHost(
+  cf: Cloudflare,
+  worker: string,
+  host: string,
+): Promise<boolean> {
+  if (host.endsWith(".workers.dev"))
+    return host === `${worker}.${await cf.workersSubdomain()}.workers.dev`;
+
+  return (await cf.workerDomains(worker)).some((d) => d.hostname === host);
+}
+
+// Connects a Cloudflare token. The owner pastes it, and fullsend writes it
+// and its account ID as Worker secrets. While the setup is open, the token
+// is also the proof of ownership: its account must run this Worker at the
+// host of the request. Then the request gets the setup cookie.
+setupRoutes.post("/setup/token", async (c) => {
+  const session = await resolveSession(c);
+
+  if (!session.identity && !setupOpen(await getSettings(c.env)))
+    return c.json(
+      { error: "unauthorized", message: "Sign in to the dashboard." },
+      401,
+    );
+  const body = asRecord(await readJson(c));
+  const token = isString(body.token) ? body.token.trim() : "";
+
+  const accountId = isString(body.account_id)
+    ? body.account_id.trim().toLowerCase()
+    : "";
+
+  if (!token) throw validation("Paste the Cloudflare token.");
+
+  if (accountId && !/^[0-9a-f]{32}$/.test(accountId))
+    throw validation("An account ID has 32 hexadecimal characters.");
+  const host = new URL(c.req.url).hostname;
+
+  if (host === "localhost" || host === "127.0.0.1") {
+    return c.json(
+      {
+        error: "local",
+        message:
+          "A local dev server has no Worker secrets. Put CF_API_TOKEN and CF_ACCOUNT_ID in .dev.vars.",
+      },
+      422,
+    );
+  }
+
+  const probe = Cloudflare.forToken(token);
+  let ids = accountId ? [accountId] : [];
+
+  if (!ids.length) {
+    try {
+      ids = (await probe.accounts()).map((a) => a.id);
+    } catch (err) {
+      if (!(err instanceof CloudflareError)) throw err;
+    }
+  }
+
+  if (!ids.length) {
+    return c.json(
+      {
+        error: "account_unknown",
+        message:
+          "Cloudflare did not show the account of this token. Check the token, and give the account ID.",
+      },
+      422,
+    );
+  }
+
+  let owner: Cloudflare | null = null;
+  let failure: CloudflareError | null = null;
+
+  for (const id of ids) {
+    const cf = probe.forAccount(id);
+
+    try {
+      if (await servesHost(cf, c.env.WORKER_NAME, host)) {
+        owner = cf;
+        break;
+      }
+    } catch (err) {
+      if (!(err instanceof CloudflareError)) throw err;
+      failure = err;
+    }
+  }
+
+  if (!owner) {
+    return failure
+      ? c.json(
+          {
+            error: "cannot_check",
+            message: `Cloudflare refused the check of the Worker: ${failure.message}. Make sure that the token is correct and has Workers Scripts Edit.`,
+          },
+          422,
+        )
+      : c.json(
+          {
+            error: "wrong_account",
+            message: `The account of this token does not run the Worker at ${host}. Make the token in the account of this Worker.`,
+          },
+          403,
+        );
+  }
+
+  try {
+    await owner.putWorkerSecret(
+      c.env.WORKER_NAME,
+      "CF_ACCOUNT_ID",
+      owner.accountId,
+    );
+    await owner.putWorkerSecret(c.env.WORKER_NAME, "CF_API_TOKEN", token);
+  } catch (err) {
+    if (!(err instanceof CloudflareError)) throw err;
+
+    return c.json(
+      {
+        error: "secret_failed",
+        message: `Cloudflare did not save the Worker secrets: ${err.message}.`,
+      },
+      422,
+    );
+  }
+
+  if (!session.identity) {
+    setCookie(
+      c,
+      SETUP_COOKIE,
+      await signToken(c.env, "setup", SETUP_TTL_SECONDS),
+      cookieOpts(SETUP_TTL_SECONDS),
+    );
+  }
+
+  return c.json({ ok: true, account_id: owner.accountId });
+});
+
+// The UI asks this until the new Worker version with the secrets serves
+// the requests.
+setupRoutes.get("/setup/token", requireSetup, (c) =>
+  c.json({ token_set: hasToken(c.env) }),
+);
 
 const ACCESS_PERMISSION = {
   access: "Access: Apps and Policies Edit",
@@ -361,18 +510,8 @@ setupRoutes.post("/setup/access/manual", requireSetup, async (c) => {
 export const MIN_PASSWORD = 12;
 
 // The password login, for an account without Zero Trust. The first setup
-// chooses it in place of Access. After this, the setup token opens nothing.
+// chooses it in place of Access. After this, the setup code opens nothing.
 setupRoutes.post("/setup/password", requireSetup, async (c) => {
-  if (!c.env.SESSION_SECRET) {
-    return c.json(
-      {
-        error: "no_session_secret",
-        message: "Set SESSION_SECRET on the Worker to use the password login.",
-      },
-      500,
-    );
-  }
-
   const body = asRecord(await readJson(c));
 
   if (!isString(body.password) || body.password.length < MIN_PASSWORD)
@@ -407,16 +546,6 @@ setupRoutes.post("/auth/login", async (c) => {
 
   if (session.mode !== "password")
     return c.json({ error: "not_password_mode" }, 404);
-
-  if (!c.env.SESSION_SECRET) {
-    return c.json(
-      {
-        error: "no_session_secret",
-        message: "Set SESSION_SECRET on the Worker to use the password login.",
-      },
-      500,
-    );
-  }
 
   const body = asRecord(await readJson(c));
   const { password_hash: hash } = await getSettings(c.env);

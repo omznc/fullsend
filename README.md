@@ -13,17 +13,21 @@ fullsend is an email API runs completely on Cloudflare. Supports the `resend` SD
 
 1. Click the "Deploy to Cloudflare" button. The deploy makes the D1
    database, the R2 bucket and the three queues.
-2. In the deploy form, set these values:
-   - `SETUP_TOKEN`: a long random string. It opens the first setup.
-   - `SESSION_SECRET`: the output of `openssl rand -hex 32`.
-   - `CF_API_TOKEN` and `CF_ACCOUNT_ID`: an API token and its account.
-     Create the token with the [token template](https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22email_sending%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22queues%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access_acct%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&name=fullsend). The template
-     fills in these permissions: Email Sending Edit, Zone Read, Queues
-     Edit, Access: Apps and Policies Edit, Access: Organizations, Identity
-     Providers, and Groups Read, Workers Scripts Edit.
-   - Keep "Protect with Cloudflare Access" off. fullsend makes its own
-     Access applications in step 4, and the API paths must stay public.
-3. Open the Worker URL. Enter the setup token.
+2. The deploy form needs no values. Keep "Protect with Cloudflare Access"
+   off. fullsend makes its own Access applications in step 4, and the API
+   paths must stay public.
+3. Open the Worker URL. Create a Cloudflare API token with the
+   [token template](https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22email_sending%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22queues%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access_acct%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&name=fullsend)
+   and paste it. The template fills in these permissions: Email Sending
+   Edit, Zone Read, Queues Edit, Access: Apps and Policies Edit, Access:
+   Organizations, Identity Providers, and Groups Read, Workers Scripts
+   Edit.
+   - The token proves that you own the deploy: its account must run this
+     Worker. fullsend saves the token and its account ID as the Worker
+     secrets `CF_API_TOKEN` and `CF_ACCOUNT_ID`.
+   - Without a token, use the setup code. The Worker writes it to its logs
+     (Workers & Pages, the Worker, Logs) on the line
+     `fullsend setup code`.
 4. Choose the dashboard login. For an account without Zero Trust, click
    "use a password instead", set a password and go to step 6. For Access,
    give the API hostname (for example `email.example.com`) and the owner's
@@ -51,8 +55,9 @@ pnpm exec wrangler d1 create fullsend
 pnpm run deploy
 ```
 
-Then set the secrets from step 2 with `pnpm exec wrangler secret put`, and
-continue at step 3.
+Then continue at step 3. fullsend makes its session secret and its setup
+code in D1. To set your own values, set the `SESSION_SECRET` or
+`SETUP_TOKEN` secret with `pnpm exec wrangler secret put`.
 
 ## Send
 

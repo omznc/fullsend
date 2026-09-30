@@ -525,7 +525,6 @@ miscRoutes.get("/settings", async (c) => {
       configured: Boolean(s.access_team_domain && s.access_aud),
     },
     cloudflare_token_set: hasToken(c.env),
-    session_secret_set: Boolean(c.env.SESSION_SECRET),
     auth_mode: s.auth_mode === "password" ? "password" : "access",
   });
 });

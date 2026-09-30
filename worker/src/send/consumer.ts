@@ -4,6 +4,7 @@ import type { Env, SendMessage } from "../env";
 import { type EmailRow, type EventData, recordEvent } from "../events/record";
 import { parseAddress } from "../lib/address";
 import { parseJsonText } from "../lib/json";
+import { sessionSecret } from "../lib/secrets";
 import { getSettings, trackingOrigin } from "../lib/settings";
 import { addTracking } from "../tracking/rewrite";
 import type { StoredBody } from "./create";
@@ -308,9 +309,7 @@ async function sendOne(env: Env, msg: Message<SendMessage>): Promise<void> {
         origin,
         emailId: email.id,
         open: Boolean(domain.open_tracking),
-        clickSecret: domain.click_tracking
-          ? (env.SESSION_SECRET ?? null)
-          : null,
+        clickSecret: domain.click_tracking ? await sessionSecret(env) : null,
       });
     }
   }

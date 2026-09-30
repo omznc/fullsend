@@ -38,10 +38,23 @@ export class Cloudflare {
   readonly accountId: string;
   private readonly token: string;
 
-  constructor(env: Env) {
+  constructor(env: Pick<Env, "CF_API_TOKEN" | "CF_ACCOUNT_ID">) {
     if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) throw new NoTokenError();
     this.token = env.CF_API_TOKEN;
     this.accountId = env.CF_ACCOUNT_ID;
+  }
+
+  // A client for a token that is not in env yet. Only the calls that need
+  // no account (accounts) work before `forAccount`.
+  static forToken(token: string): Cloudflare {
+    return new Cloudflare({ CF_API_TOKEN: token, CF_ACCOUNT_ID: "-" });
+  }
+
+  forAccount(accountId: string): Cloudflare {
+    return new Cloudflare({
+      CF_API_TOKEN: this.token,
+      CF_ACCOUNT_ID: accountId,
+    });
   }
 
   private async raw<T>(
@@ -115,6 +128,11 @@ export class Cloudflare {
 
   account(): Promise<{ id: string; name: string }> {
     return this.call(this.acct);
+  }
+
+  // The accounts that the token can see. An account token sees its own.
+  accounts(): Promise<{ id: string; name: string }[]> {
+    return this.all("/accounts");
   }
 
   // Zones
@@ -245,6 +263,31 @@ export class Cloudflare {
 
   workerDomains(service: string): Promise<WorkerDomain[]> {
     return this.call(`${this.acct}/workers/domains?service=${service}`);
+  }
+
+  // The workers.dev subdomain of the account: "<sub>.workers.dev".
+  async workersSubdomain(): Promise<string> {
+    const res = await this.call<{ subdomain: string }>(
+      `${this.acct}/workers/subdomain`,
+    );
+
+    return res.subdomain;
+  }
+
+  // Writes a secret of a Worker. Cloudflare deploys a new version, so the
+  // value reaches requests some seconds later.
+  async putWorkerSecret(
+    script: string,
+    name: string,
+    text: string,
+  ): Promise<void> {
+    await this.call<JsonValue>(
+      `${this.acct}/workers/scripts/${script}/secrets`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ name, text, type: "secret_text" }),
+      },
+    );
   }
 
   attachWorkerDomain(input: {

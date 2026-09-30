@@ -99,7 +99,9 @@ export interface Session {
   mode: "access" | "password" | "dev";
   identity: string | null;
   access_configured: boolean;
+  // SETUP_TOKEN replaces the generated setup code.
   setup_token_set: boolean;
+  cloudflare_token_set: boolean;
   setup_completed: boolean;
   deploy_name: string;
   worker_url: string;
@@ -350,7 +352,6 @@ export interface Settings {
   tracking_hostname: string | null;
   access: { team_domain: string | null; configured: boolean };
   cloudflare_token_set: boolean;
-  session_secret_set: boolean;
   auth_mode: "access" | "password";
 }
 

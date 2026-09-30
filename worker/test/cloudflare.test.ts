@@ -20,6 +20,7 @@ import {
   type JsonValue,
   parseJsonText,
 } from "../src/lib/json";
+import { sessionSecret, setupCode } from "../src/lib/secrets";
 import { BASE } from "./helpers";
 
 const ACCOUNT = "acc123";
@@ -596,5 +597,188 @@ describe("automatic Access setup", () => {
     });
 
     expect(again.status).toBe(403);
+  });
+});
+
+describe("token setup", () => {
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Fullsend-Dashboard": "1",
+  };
+
+  // A Worker without CF_API_TOKEN and CF_ACCOUNT_ID.
+  async function request(path: string, init: RequestInit = {}, base = BASE) {
+    return worker.fetch(
+      new Request(`${base}${path}`, init),
+      env,
+      createExecutionContext(),
+    );
+  }
+
+  const claim = (body: JsonObject, base = BASE) =>
+    request(
+      "/api/setup/token",
+      { method: "POST", headers, body: JSON.stringify(body) },
+      base,
+    );
+
+  const secrets = () =>
+    (fake?.calls ?? [])
+      .filter((c) => c.method === "PUT" && c.path.includes("/secrets"))
+      .map((c) => (isJsonObject(c.body) ? c.body.name : null));
+
+  const ownRoutes = (account: string, domains: string[]) => ({
+    [`GET /accounts/${account}/workers/domains`]: domains.map((hostname) => ({
+      id: hostname,
+      hostname,
+      service: "fullsend",
+    })),
+    [`GET /accounts/${account}/workers/subdomain`]: { subdomain: "acme" },
+    [`PUT /accounts/${account}/workers/scripts/fullsend/secrets`]: (
+      call: Call,
+    ) => ({ result: call.body }),
+  });
+
+  beforeEach(async () => {
+    await env.DB.prepare("DELETE FROM settings").run();
+  });
+
+  it("saves the token of the account that runs the Worker", async () => {
+    fake = fakeCloudflare({
+      "GET /accounts": [{ id: ACCOUNT, name: "Acme" }],
+      ...ownRoutes(ACCOUNT, ["fullsend.test"]),
+    });
+
+    const res = await claim({ token: "cf-test-token" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, account_id: ACCOUNT });
+    expect(secrets()).toEqual(["CF_ACCOUNT_ID", "CF_API_TOKEN"]);
+
+    const put = fake.calls.find((c) => c.method === "PUT");
+
+    expect(put?.body).toEqual({
+      name: "CF_ACCOUNT_ID",
+      text: ACCOUNT,
+      type: "secret_text",
+    });
+
+    // The token also unlocked the setup.
+    const cookie = (res.headers.get("Set-Cookie") ?? "").split(";")[0]!;
+
+    expect(cookie).toMatch(/^fs_setup=/);
+
+    const session = await request("/api/session", {
+      headers: { Cookie: cookie },
+    });
+
+    expect(await session.json()).toMatchObject({ state: "access_setup" });
+
+    // This Worker version does not have the secrets yet.
+    const status = await request("/api/setup/token", {
+      headers: { Cookie: cookie },
+    });
+
+    expect(await status.json()).toEqual({ token_set: false });
+  });
+
+  it("matches the workers.dev URL of the account", async () => {
+    fake = fakeCloudflare({
+      "GET /accounts": [{ id: ACCOUNT, name: "Acme" }],
+      ...ownRoutes(ACCOUNT, []),
+    });
+
+    const res = await claim(
+      { token: "cf-test-token" },
+      "https://fullsend.acme.workers.dev",
+    );
+
+    expect(res.status).toBe(200);
+    expect(secrets()).toEqual(["CF_ACCOUNT_ID", "CF_API_TOKEN"]);
+  });
+
+  it("refuses a token of an account that does not run the Worker", async () => {
+    fake = fakeCloudflare({
+      "GET /accounts": [{ id: ACCOUNT, name: "Other" }],
+      ...ownRoutes(ACCOUNT, ["other.example.com"]),
+    });
+
+    const res = await claim({ token: "cf-test-token" });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "wrong_account" });
+    expect(res.headers.get("Set-Cookie")).toBeNull();
+    expect(secrets()).toEqual([]);
+  });
+
+  it("asks for the account ID when the token cannot list accounts", async () => {
+    const id = "0123456789abcdef0123456789abcdef";
+
+    fake = fakeCloudflare({
+      "GET /accounts": () => null,
+      ...ownRoutes(id, ["fullsend.test"]),
+    });
+
+    const first = await claim({ token: "cf-test-token" });
+
+    expect(first.status).toBe(422);
+    expect(await first.json()).toMatchObject({ error: "account_unknown" });
+
+    const second = await claim({ token: "cf-test-token", account_id: id });
+
+    expect(second.status).toBe(200);
+    expect(secrets()).toEqual(["CF_ACCOUNT_ID", "CF_API_TOKEN"]);
+  });
+
+  it("needs a sign-in after the setup", async () => {
+    await env.DB.prepare(
+      "INSERT INTO settings (key, value) VALUES ('auth_mode', 'password'), ('password_hash', 'x')",
+    ).run();
+    fake = fakeCloudflare({});
+
+    const res = await claim({ token: "cf-test-token" });
+
+    expect(res.status).toBe(401);
+    expect(fake.calls).toEqual([]);
+  });
+});
+
+describe("generated secrets", () => {
+  // A Worker without SESSION_SECRET and SETUP_TOKEN.
+  const bare: Env = { ...env, SESSION_SECRET: "", SETUP_TOKEN: "" };
+
+  beforeEach(async () => {
+    await env.DB.prepare("DELETE FROM settings").run();
+  });
+
+  it("makes one session secret and keeps it", async () => {
+    const first = await sessionSecret(bare);
+
+    expect(first).toMatch(/^[\w-]{43}$/);
+    expect(await sessionSecret(bare)).toBe(first);
+    expect(await sessionSecret(cfEnv)).toBe("test-session-secret");
+  });
+
+  it("opens the setup with the generated setup code", async () => {
+    const code = await setupCode(bare);
+
+    expect(code).toMatch(/^[0-9A-Z]{4}(-[0-9A-Z]{4}){3}$/);
+
+    const unlock = (token: string) =>
+      worker.fetch(
+        new Request(`${BASE}/api/setup/unlock`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Fullsend-Dashboard": "1",
+          },
+          body: JSON.stringify({ token }),
+        }),
+        bare,
+        createExecutionContext(),
+      );
+
+    expect((await unlock("test-setup-token")).status).toBe(403);
+    expect((await unlock(` ${code.toLowerCase()} `)).status).toBe(200);
   });
 });
