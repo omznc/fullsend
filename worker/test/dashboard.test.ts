@@ -247,4 +247,81 @@ describe("password mode", () => {
     // An unknown period falls back to 7 days, and says so.
     expect((await get("forever")).period).toBe("7d");
   });
+
+  // A login from one client address. The password is the one that the
+  // first test of this block set last.
+  const login = (ip: string, password = "a new long password") =>
+    call("/api/auth/login", {
+      method: "POST",
+      headers: { ...json, "CF-Connecting-IP": ip },
+      body: JSON.stringify({ password }),
+    });
+
+  const wrong = (ip: string) => login(ip, "not the password at all");
+
+  it("limits the login attempts of each client", async () => {
+    const guesses = await Promise.all(
+      Array.from({ length: 8 }, () => wrong("203.0.113.7")),
+    );
+
+    const codes = guesses.map((r) => r.status).toSorted();
+
+    expect(codes).toEqual([403, 403, 403, 403, 403, 429, 429, 429]);
+
+    // The correct password from that client must wait too.
+    const limited = await login("203.0.113.7");
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get("Retry-After"))).toBeGreaterThan(0);
+    const body = await limited.json<{ error: string; retry_after: number }>();
+    expect(body.error).toBe("too_many_attempts");
+    expect(body.retry_after).toBeGreaterThan(0);
+
+    // A different client is not limited.
+    expect((await login("203.0.113.8")).status).toBe(200);
+  });
+
+  it("clears the count after a correct password", async () => {
+    for (let i = 0; i < 4; i++)
+      expect((await wrong("203.0.113.20")).status).toBe(403);
+
+    expect((await login("203.0.113.20")).status).toBe(200);
+
+    for (let i = 0; i < 4; i++)
+      expect((await wrong("203.0.113.20")).status).toBe(403);
+  });
+
+  it("counts an IPv6 /64 as one client and a /48 as one site", async () => {
+    // Five addresses in one /64 are one client.
+    await Promise.all([1, 2, 3, 4, 5].map((n) => wrong(`2001:db8:1:1::${n}`)));
+    expect((await login("2001:db8:1:1:ffff::1")).status).toBe(429);
+    expect((await login("2001:db8:1:2::1")).status).toBe(200);
+
+    // Twenty attempts from five /64 networks in one /48 lock the site.
+    await Promise.all(
+      [1, 2, 3, 4, 5].flatMap((net) =>
+        [1, 2, 3, 4].map((n) => wrong(`2001:db8:2:${net}::${n}`)),
+      ),
+    );
+    expect((await login("2001:db8:2:6::1")).status).toBe(429);
+    expect((await login("2001:db8:3:1::1")).status).toBe(200);
+  });
+
+  it("limits the attempts of all clients in one minute", async () => {
+    const minute = Math.floor(Date.now() / 60_000);
+
+    const full = env.DB.prepare(
+      "INSERT INTO auth_attempts (key, count, locked_until, updated_at) VALUES (?, 60, 0, 0) ON CONFLICT (key) DO UPDATE SET count = 60",
+    );
+
+    await env.DB.batch([
+      full.bind(`login:all:${minute}`),
+      full.bind(`login:all:${minute + 1}`),
+    ]);
+
+    expect((await login("203.0.113.30")).status).toBe(429);
+    await env.DB.prepare(
+      "DELETE FROM auth_attempts WHERE key LIKE 'login:all:%'",
+    ).run();
+    expect((await login("203.0.113.30")).status).toBe(200);
+  });
 });

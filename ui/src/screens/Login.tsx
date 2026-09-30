@@ -14,7 +14,13 @@ import {
   errorText,
 } from "../components/ui";
 import { useApi, useInterval, useNow, useTitle } from "../lib/hooks";
-import { isBoolean, isJsonObject, isString, type JsonValue } from "../lib/json";
+import {
+  isBoolean,
+  isJsonObject,
+  isNumber,
+  isString,
+  type JsonValue,
+} from "../lib/json";
 
 // The sign-in and setup screen. The Worker decides the state:
 // locked, Access setup, or login (Access or password).
@@ -847,6 +853,20 @@ function ThroughAccess({
   );
 }
 
+// The wait in seconds from a 429 answer. The Worker sends `retry_after`.
+function retryAfter(body: JsonValue): number {
+  const v = isJsonObject(body) ? body.retry_after : undefined;
+
+  return isNumber(v) && v > 0 ? v : 60;
+}
+
+function waitText(seconds: number): string {
+  if (seconds < 60) return `${seconds} seconds`;
+  const minutes = Math.ceil(seconds / 60);
+
+  return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
+
 function Password({ session }: { session: Session }) {
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -871,8 +891,11 @@ function Password({ session }: { session: Session }) {
       })
       .catch((cause: unknown) => {
         if (cause instanceof ApiRequestError && cause.status === 429) {
-          setUntil(Date.now() + 60_000);
-          setError("Too many attempts. Wait 1 minute, then try again.");
+          const seconds = retryAfter(cause.body);
+          setUntil(Date.now() + seconds * 1000);
+          setError(
+            `Too many attempts. Wait ${waitText(seconds)}, then try again.`,
+          );
         } else setError(errorText(cause));
         setBusy(false);
       });

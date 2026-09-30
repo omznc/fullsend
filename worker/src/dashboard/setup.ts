@@ -7,6 +7,7 @@ import { asRecord, isHostname, readJson } from "../lib/http";
 import { isString } from "../lib/json";
 import { setupCode } from "../lib/secrets";
 import { getSettings, type Settings, setSettings } from "../lib/settings";
+import { clearAttempts, takeAttempt } from "./attempts";
 import {
   type DashVars,
   requireSetup,
@@ -90,6 +91,9 @@ setupRoutes.post("/setup/unlock", async (c) => {
     );
   }
 
+  const limited = await takeAttempt(c, "unlock");
+
+  if (limited) return limited;
   const expected = await setupCode(c.env);
 
   // The generated code is upper case with dashes. Accept it as typed.
@@ -108,6 +112,7 @@ setupRoutes.post("/setup/unlock", async (c) => {
     );
   }
 
+  await clearAttempts(c, "unlock");
   setCookie(
     c,
     SETUP_COOKIE,
@@ -547,6 +552,9 @@ setupRoutes.post("/auth/login", async (c) => {
   if (session.mode !== "password")
     return c.json({ error: "not_password_mode" }, 404);
 
+  const limited = await takeAttempt(c, "login");
+
+  if (limited) return limited;
   const body = asRecord(await readJson(c));
   const { password_hash: hash } = await getSettings(c.env);
 
@@ -562,6 +570,7 @@ setupRoutes.post("/auth/login", async (c) => {
     );
   }
 
+  await clearAttempts(c, "login");
   setCookie(
     c,
     SESSION_COOKIE,

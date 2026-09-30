@@ -123,5 +123,8 @@ export async function retention(env: Env, now = Date.now()): Promise<void> {
     env.DB.prepare("DELETE FROM idempotency_keys WHERE created_at < ?").bind(
       now - DAY,
     ),
+    env.DB.prepare(
+      "DELETE FROM auth_attempts WHERE updated_at < ?1 AND locked_until < ?2",
+    ).bind(now - DAY, now),
   ]);
 }

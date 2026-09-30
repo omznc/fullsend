@@ -223,6 +223,15 @@ export const webhookDeliveries = sqliteTable(
   ],
 );
 
+// The count of password and setup code attempts for each client, each
+// IPv6 site and each minute. See src/dashboard/attempts.ts.
+export const authAttempts = sqliteTable("auth_attempts", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull(),
+  lockedUntil: integer("locked_until").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
