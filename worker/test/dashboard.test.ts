@@ -195,4 +195,56 @@ describe("password mode", () => {
         .status,
     ).toBe(200);
   });
+
+  it("counts the overview over the chosen period", async () => {
+    // The test above set this password.
+    const cookie = cookieFrom(
+      await post("/api/auth/login", { password: "a new long password" }),
+    );
+
+    const day = 86_400_000;
+    const now = Date.now();
+
+    const insert = env.DB.prepare(
+      "INSERT INTO email_events (id, email_id, type, created_at) VALUES (?, ?, 'sent', ?)",
+    );
+
+    await env.DB.batch(
+      [100, 50, 2].map((ago) =>
+        insert.bind(`ov-${ago}`, `ov-email-${ago}`, now - ago * day),
+      ),
+    );
+
+    interface Overview {
+      period: string;
+      stats: { type: string; value: number; previous: number | null }[];
+      series: unknown[];
+    }
+
+    const get = async (period: string) =>
+      (
+        await call(`/api/overview?period=${period}`, {
+          headers: { Cookie: cookie },
+        })
+      ).json<Overview>();
+
+    const sent = (o: Overview) => o.stats.find((s) => s.type === "sent")!;
+
+    const week = await get("7d");
+    expect(sent(week)).toEqual({ type: "sent", value: 1, previous: 0 });
+
+    const month = await get("30d");
+    expect(sent(month).value).toBe(1);
+
+    // "all" starts at the first event and has no period before it.
+    const all = await get("all");
+    expect(all.period).toBe("all");
+    expect(sent(all)).toEqual({ type: "sent", value: 3, previous: null });
+    // 100 days in 7-day buckets.
+    expect(all.series.length).toBeGreaterThan(14);
+    expect(all.series.length).toBeLessThanOrEqual(16);
+
+    // An unknown period falls back to 7 days, and says so.
+    expect((await get("forever")).period).toBe("7d");
+  });
 });

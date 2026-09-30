@@ -38,6 +38,18 @@ const PERIODS = new Map<string, Period>([
   ["30d", { span: 30 * DAY, bucket: DAY }],
 ]);
 
+// "all" starts at the first event. The bucket grows with the span, so the
+// chart keeps about 60 bars or fewer: a day, a week or 30 days.
+function allTime(first: number | null, now: number): Period {
+  if (first === null) return WEEK;
+  const span = Math.max(now - first, DAY);
+
+  const bucket =
+    span <= 60 * DAY ? DAY : span <= 60 * 7 * DAY ? 7 * DAY : 30 * DAY;
+
+  return { span, bucket };
+}
+
 const COUNTED = [
   "sent",
   "delivered",
@@ -85,14 +97,28 @@ function level(
 }
 
 miscRoutes.get("/overview", async (c) => {
-  const period = PERIODS.get(c.req.query("period") ?? "7d") ?? WEEK;
+  const asked = c.req.query("period") ?? "7d";
+  const all = asked === "all";
+  const name = all || PERIODS.has(asked) ? asked : "7d";
   const now = Date.now();
+
+  const first = all
+    ? await c.env.DB.prepare(
+        "SELECT MIN(created_at) AS t FROM email_events WHERE bot IS NULL",
+      ).first<{ t: number | null }>()
+    : null;
+
+  const period = all
+    ? allTime(first?.t ?? null, now)
+    : (PERIODS.get(name) ?? WEEK);
+
   const since = now - period.span;
 
   const [current, previous, series, failures, domains, total] =
     await Promise.all([
       counts(c.env, since, now),
-      counts(c.env, since - period.span, since),
+      // "all" has no period before it.
+      all ? null : counts(c.env, since - period.span, since),
       c.env.DB.prepare(
         `SELECT (created_at / ?1) * ?1 AS bucket, type, COUNT(DISTINCT email_id) AS n FROM email_events
        WHERE created_at >= ?2 AND bot IS NULL AND type IN ('sent','delivered','bounced')
@@ -136,12 +162,12 @@ miscRoutes.get("/overview", async (c) => {
     : null;
 
   return c.json({
-    period: c.req.query("period") ?? "7d",
+    period: name,
     total_emails: total?.n ?? 0,
     stats: COUNTED.map((t) => ({
       type: t,
       value: current[t],
-      previous: previous[t],
+      previous: previous ? previous[t] : null,
     })),
     series: [...buckets].map(([t, v]) => ({ at: iso(t), ...v })),
     bounce_rate: { value: bounceRate, level: level(bounceRate, 0.02, 0.04) },
