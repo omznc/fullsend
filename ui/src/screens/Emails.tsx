@@ -34,7 +34,7 @@ import {
   errorText,
 } from "../components/ui";
 import { plainReason, utc } from "../lib/format";
-import { useApi, useInterval, useNarrow, useTitle } from "../lib/hooks";
+import { useApi, useNarrow, usePoll, useTitle } from "../lib/hooks";
 import { Link, useQuery } from "../lib/router";
 
 const PAGE = 25;
@@ -129,7 +129,8 @@ export function Emails() {
     before,
   })}`;
 
-  const { data, error, loading, reload } = useApi<List<Email>>(path);
+  const { data, error, loading, reload, setData } = useApi<List<Email>>(path);
+
   const rows = data?.data ?? [];
 
   // Filter changes go back to the first page.
@@ -143,24 +144,40 @@ export function Emails() {
     setResetKey((n) => n + 1);
   };
 
-  // New emails wait behind a bar, so rows do not move under the cursor.
+  // The list polls for changes. On the first page, a poll replaces the
+  // rows, so new emails show at the top. While the pointer is over the
+  // list, new emails wait behind a bar, so rows do not move under the
+  // cursor. The rows on screen always get their new status.
+  const hovering = useRef(false);
+
   const [fresh, setFresh] = useState<{ path: string; ids: string[] } | null>(
     null,
   );
 
-  useInterval(
-    () => {
+  usePoll(
+    async () => {
       const polled = path;
-      void api<List<Email>>(polled).then(
-        (res) => {
-          setFresh({ path: polled, ids: res.data.map((e) => e.id) });
+      const res = await api<List<Email>>(polled).catch(() => null);
 
-          return undefined;
-        },
-        () => undefined,
+      if (!res) return;
+
+      if (firstPage && !hovering.current) {
+        setData(res);
+        setFresh(null);
+
+        return;
+      }
+
+      const byId = new Map(res.data.map((e) => [e.id, e]));
+      setData((prev) =>
+        prev
+          ? { ...prev, data: prev.data.map((e) => byId.get(e.id) ?? e) }
+          : res,
       );
+
+      if (firstPage) setFresh({ path: polled, ids: res.data.map((e) => e.id) });
     },
-    firstPage && tab === "all" && data ? 15_000 : null,
+    data ? 5_000 : null,
   );
   const known = new Set(rows.map((e) => e.id));
 
@@ -260,7 +277,17 @@ export function Emails() {
       <div aria-live="polite" className="sr-only">
         {newCount > 0 ? `${newCount} new emails` : ""}
       </div>
-      {body}
+      <div
+        className="contents"
+        onPointerEnter={() => {
+          hovering.current = true;
+        }}
+        onPointerLeave={() => {
+          hovering.current = false;
+        }}
+      >
+        {body}
+      </div>
       {data && rows.length > 0 && (
         <Pager
           hasPrev={hasPrev}

@@ -120,6 +120,35 @@ export function useInterval(fn: () => void, ms: number | null) {
   }, [ms]);
 }
 
+// Calls fn at an interval while the tab is visible, and one time when the
+// tab becomes visible again. A new call waits until the last one ends.
+export function usePoll(fn: () => Promise<void>, ms: number | null) {
+  const ref = useRef(fn);
+  useEffect(() => {
+    ref.current = fn;
+  });
+  useEffect(() => {
+    if (ms === null) return;
+    let busy = false;
+
+    const tick = () => {
+      if (busy || document.hidden) return;
+      busy = true;
+      void ref.current().finally(() => {
+        busy = false;
+      });
+    };
+
+    const t = setInterval(tick, ms);
+    document.addEventListener("visibilitychange", tick);
+
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [ms]);
+}
+
 // True when the viewport is narrower than the breakpoint.
 export function useNarrow(px = 768): boolean {
   const query = `(max-width: ${px - 1}px)`;

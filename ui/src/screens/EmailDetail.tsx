@@ -5,6 +5,7 @@ import {
   type EmailBody,
   type EmailDetail as EmailDetailData,
   type EmailEvent,
+  type EmailStatus,
   type Settings,
 } from "../api";
 import {
@@ -27,7 +28,7 @@ import {
   useToast,
 } from "../components/ui";
 import { address, bytes, clock, plainReason, utc } from "../lib/format";
-import { useApi, useNarrow, useNow, useTitle } from "../lib/hooks";
+import { useApi, useNarrow, useNow, usePoll, useTitle } from "../lib/hooks";
 import {
   isJsonObject,
   pick,
@@ -43,6 +44,21 @@ import { apiBase, useSession } from "../session";
 export function EmailDetail({ id }: { id: string }) {
   const res = useApi<EmailDetailData>(`/emails/${id}`);
   useTitle(res.data?.subject ?? "Email");
+
+  // Polls for new events: fast while the email is on its way, slower
+  // after, for opens and clicks. A failed poll keeps the data on screen.
+  const status = res.data?.status;
+
+  usePoll(
+    async () => {
+      const next = await api<EmailDetailData>(`/emails/${id}`).catch(
+        () => null,
+      );
+
+      if (next) res.setData(next);
+    },
+    status ? (IN_FLIGHT.has(status) ? 3_000 : 10_000) : null,
+  );
 
   if (res.error) {
     if (res.error instanceof ApiRequestError && res.error.status === 404) {
@@ -77,6 +93,13 @@ export function EmailDetail({ id }: { id: string }) {
 }
 
 // Types and helpers
+
+const IN_FLIGHT = new Set<EmailStatus>([
+  "queued",
+  "scheduled",
+  "sent",
+  "delivery_delayed",
+]);
 
 type Data = JsonObject | null;
 
