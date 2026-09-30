@@ -44,14 +44,14 @@ const HOSTS: {
     icon: "code",
     label: "API hostname",
     sub: "email",
-    use: "Base URL for your SDK.",
+    use: "The base URL for your SDK.",
   },
   {
     key: "tracking_hostname",
     icon: "link",
     label: "Tracking hostname",
     sub: "t",
-    use: "Open pixels and click redirects.",
+    use: "Serves the open-tracking pixel and the click redirects.",
   },
 ];
 
@@ -231,11 +231,6 @@ export function StepHostnames({ flow }: { flow: Flow }) {
           {error}
         </Notice>
       )}
-      <Hint title="If it fails">
-        The status turns <span className="font-mono text-red">error</span> with
-        the reason, for example "hostname already used by another Worker", and
-        you can pick another name in the field.
-      </Hint>
     </StepFrame>
   );
 }
@@ -482,10 +477,6 @@ export function StepTest({ flow }: { flow: Flow }) {
           )}
         </>
       )}
-      <Hint title="If it bounces">
-        The timeline shows the reason in plain words and the server's reply, for
-        example <Mono>550 5.1.1</Mono>, with "try another address".
-      </Hint>
     </StepFrame>
   );
 }

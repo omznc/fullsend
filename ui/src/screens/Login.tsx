@@ -379,13 +379,19 @@ function AccessSetup({
           The dashboard now needs a sign-in through Cloudflare Access.
         </Heading>
         <Steps steps={done.steps} />
+        <Notice tone="blue" title="Wait a few minutes">
+          A new Access app can take some minutes to start. Until then, Access
+          can refuse your email with "That account does not have access". Wait,
+          then sign in again.
+        </Notice>
         <ButtonLink
           href={done.login_url}
           variant="primary"
           icon="login"
           className={wide}
         >
-          sign in at {done.login_url.replace(/^https:\/\//, "")}
+          sign in at{" "}
+          {done.login_url.replace(/^https:\/\//, "").replace(/\/$/, "")}
         </ButtonLink>
       </Layout>
     );

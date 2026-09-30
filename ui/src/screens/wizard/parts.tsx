@@ -43,11 +43,14 @@ export function Hint({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1 bg-panel px-3.5 py-3 text-[13.5px] text-fg2">
+    <div className="bg-panel px-3.5 py-3 text-[13.5px] text-fg2">
       {title && (
-        <span className="text-[14px] font-semibold text-fg">{title}</span>
+        <span className="mb-1 block text-[14px] font-semibold text-fg">
+          {title}
+        </span>
       )}
-      {children}
+      {/* Text flows inline. Give each line of a list its own block. */}
+      <div>{children}</div>
     </div>
   );
 }
@@ -102,9 +105,10 @@ export function StepFrame({
       </div>
       <span className="flex-1" />
       {footer && (
+        // Sticky, so the next action stays in view on a long step.
         <div
           className={cx(
-            "flex flex-wrap items-center gap-2 border-t border-line py-3",
+            "sticky bottom-0 flex flex-wrap items-center gap-2 border-t border-line bg-bg py-3",
             pad,
           )}
         >

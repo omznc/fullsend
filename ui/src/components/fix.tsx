@@ -442,7 +442,7 @@ function TokenForm({ onSaved }: { onSaved?: () => void }) {
       <Button
         type="submit"
         variant="primary"
-        icon="link"
+        icon="login"
         busy={busy}
         disabled={!token.trim()}
         className="h-11 w-full justify-center text-[13px] md:h-10"

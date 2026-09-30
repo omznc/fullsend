@@ -755,26 +755,35 @@ function FirstRun() {
           done: data.cloudflare_token_set,
           label: "Cloudflare token connected",
           meta: "",
+          step: 1,
         },
         {
           done: Boolean(verified),
           label: verified ? `${verified.name} verified` : "Domain verified",
-          meta: verified ? `${verified.records.length} records` : "step 4",
+          meta: verified ? `${verified.records.length} records` : "",
+          step: 2,
         },
         {
           done: Boolean(data.api_hostname && data.tracking_hostname),
           label: "Hostnames attached",
-          meta: data.api_hostname ?? "step 5",
+          meta: data.tracking_hostname
+            ? (data.api_hostname ?? "")
+            : data.api_hostname
+              ? "no tracking hostname"
+              : "",
+          step: 5,
         },
         {
           done: data.api_keys > 0,
           label: "First API key",
-          meta: data.api_keys > 0 ? `${data.api_keys} active` : "step 6",
+          meta: data.api_keys > 0 ? `${data.api_keys} active` : "",
+          step: 6,
         },
         {
           done: data.emails > 0,
           label: "Test email",
-          meta: data.emails > 0 ? `${number(data.emails)} sent` : "step 7",
+          meta: data.emails > 0 ? `${number(data.emails)} sent` : "",
+          step: 7,
         },
       ]
     : [];
@@ -823,9 +832,20 @@ function FirstRun() {
                       {s.done ? ", done" : ", not done"}
                     </span>
                   </span>
-                  <span className="font-mono text-[12px] text-fg3">
-                    {s.meta}
-                  </span>
+                  {s.meta && (
+                    <span className="font-mono text-[12px] text-fg3">
+                      {s.meta}
+                    </span>
+                  )}
+                  {!s.done && (
+                    <Link
+                      href={`/setup/${s.step}`}
+                      className="flex items-center gap-0.5 font-mono text-[12px] text-fg2 underline underline-offset-3 hover:text-fg"
+                    >
+                      set up
+                      <Icon name="chevron-right" size={16} />
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>

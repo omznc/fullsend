@@ -7,7 +7,7 @@ import {
   fixedIn,
   HowToFix,
   permName,
-  TOKEN_TEMPLATE_URL,
+  TokenSteps,
 } from "../../components/fix";
 import {
   Badge,
@@ -19,10 +19,9 @@ import {
   Notice,
   Select,
   SkeletonBlock,
-  TextLink,
   errorText,
 } from "../../components/ui";
-import { useApi, useNow } from "../../lib/hooks";
+import { useApi, useInterval, useNow } from "../../lib/hooks";
 import { Hint, type Flow, Mono, NeedDomain, Rows, StepFrame } from "./parts";
 
 // Steps 1 to 4: the token, the domain, the DNS records, the events.
@@ -32,6 +31,15 @@ import { Hint, type Flow, Mono, NeedDomain, Rows, StepFrame } from "./parts";
 export function StepCloudflare({ flow }: { flow: Flow }) {
   const cf = useApi<CloudflareStatus>("/cloudflare");
   const [busy, setBusy] = useState(false);
+  // A pasted token reaches the Worker some seconds after the save.
+  const [saved, setSaved] = useState(false);
+
+  useInterval(
+    () => {
+      if (!busy) void cf.reload();
+    },
+    saved && !cf.data?.token_set ? 3000 : null,
+  );
 
   const recheck = async () => {
     setBusy(true);
@@ -94,27 +102,8 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
           <Notice tone="amber" title="No Cloudflare token">
             fullsend cannot reach Cloudflare without a token. You can still add
             domains by hand.
-            <HowToFix
-              fix={{ kind: "token_missing" }}
-              check={checkFor({ kind: "token_missing" })}
-              className="mt-1.5"
-            />
           </Notice>
-          <Hint title="Set the token">
-            <span>
-              Set the <Mono>CF_API_TOKEN</Mono> and <Mono>CF_ACCOUNT_ID</Mono>{" "}
-              secrets on the Worker. Use <Mono>cf workers secrets update</Mono>{" "}
-              for each one, then check again. No redeploy needed.
-            </span>
-            <span>
-              Create the token with the{" "}
-              <TextLink href={TOKEN_TEMPLATE_URL}>token template</TextLink>. It
-              fills in the permissions. The token needs these permissions: Email
-              Sending Edit, Zone Read, Queues Edit, Access: Apps and Policies
-              Edit, Access: Organizations, Identity Providers, and Groups Read,
-              Workers Scripts Edit.
-            </span>
-          </Hint>
+          <TokenSteps onSaved={() => setSaved(true)} />
         </>
       ) : !d.valid ? (
         <>
@@ -127,8 +116,8 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
             />
           </Notice>
           <Hint>
-            Check <Mono>CF_API_TOKEN</Mono> and <Mono>CF_ACCOUNT_ID</Mono>, then
-            check again.
+            Open "How to fix?" and paste a new token. fullsend replaces the old
+            one.
           </Hint>
         </>
       ) : (
@@ -623,12 +612,16 @@ export function StepEvents({ flow }: { flow: Flow }) {
       )}
       {sub.status !== "active" && (
         <Hint title="If the token cannot make it">
-          <span>1. Cloudflare, Email Service, Event subscriptions.</span>
-          <span>
+          <span className="block">
+            1. Cloudflare, Email Service, Event subscriptions.
+          </span>
+          <span className="block">
             2. Add the destination: the Cloudflare Queue{" "}
             <Mono>fullsend-events</Mono>.
           </span>
-          <span>3. Tick all delivery events, save, then check again.</span>
+          <span className="block">
+            3. Tick all delivery events, save, then check again.
+          </span>
         </Hint>
       )}
     </StepFrame>
