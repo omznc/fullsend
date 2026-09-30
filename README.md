@@ -59,6 +59,28 @@ Then continue at step 3. fullsend makes its session secret and its setup
 code in D1. To set your own values, set the `SESSION_SECRET` or
 `SETUP_TOKEN` secret with `pnpm exec wrangler secret put`.
 
+### Update a deploy
+
+The Deploy button makes a copy of this repo, not a fork, so GitHub cannot
+sync it. Cloudflare also writes the D1 database ID into `wrangler.jsonc`
+of the copy. Apply the new changes as a patch, then push. The push
+deploys the Worker.
+
+For the first update, set `OLD` to the commit of this repo that you
+deployed. After that, the commands read it from the last update commit.
+
+```sh
+git clone git@github.com:<you>/fullsend.git && cd fullsend
+git fetch https://github.com/omznc/fullsend.git main
+OLD=$(git log -1 --format=%s | grep -o '[0-9a-f]\{7,\}$')
+NEW=$(git rev-parse --short FETCH_HEAD)
+git diff "$OLD" "$NEW" | git apply --index
+git commit -m "update to omznc/fullsend $NEW"
+git push
+```
+
+"No valid patches in input" means that the copy is up to date.
+
 ## Send
 
 Use the official `resend` SDK:

@@ -71,6 +71,9 @@ on). To find a command, run `cf cli search "<task>"`.
   before you run it.
 - Do not change a Cloudflare resource (Access applications, queues, D1,
   R2, custom domains, Email Sending) without approval from the user.
+- When the auth profile has more than one account, `cf` stops with "More
+  than one account available". Set `CLOUDFLARE_ACCOUNT_ID` for the
+  command.
 
 ## Lint and format
 
@@ -143,6 +146,17 @@ formats Markdown and JSON. `worker/migrations`, `pnpm-lock.yaml` and
 - The dashboard API returns errors as `{ error, message }`. The public API
   returns the Resend shape `{ statusCode, name, message }`. Do not mix them.
 - `.github/workflows/ci.yml` is the only workflow.
+- **A deploy from the button is a copy, not a fork.** Its repo has one
+  commit ("source repo import") and no shared history with this repo.
+  Cloudflare adds `database_id` and `preview_bucket_name` to
+  `wrangler.jsonc` in the copy, and removes `.github/workflows/ci.yml`. An
+  owner updates the copy with a patch (README "Update a deploy"), so a
+  change to the D1 or R2 lines of `wrangler.jsonc` can make that patch
+  fail. A push to the main branch of the copy deploys it.
+- **A new Access app can refuse a valid login for some minutes.** Access
+  shows "That account does not have access". Before you change the policy
+  code, read the Access logs
+  (`cf zero-trust access logs access-requests list`) and the policy tester.
 
 ## Where the rest lives
 

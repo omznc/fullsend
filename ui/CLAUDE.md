@@ -26,6 +26,13 @@ serves the build (`ui/dist`) through Workers Static Assets. Read the root
 - **In pixelarticons 1.8.1, the checkbox names are reversed.** `checkbox`
   is the box with the check mark. `checkbox-on` is the empty box. See
   `Checkbox` in `src/components/ui.tsx`.
+- **Some icon glyphs do not fill their box.** `link` is 8 px tall in a
+  16 px icon, and it sits high next to lowercase text. In a button, use
+  a glyph that fills the box (`login`, `lock-open`, `reload`).
+- **`Hint` in `screens/wizard/parts.tsx` flows its text inline.** For a
+  list of lines, give each line `className="block"`.
+- **The wizard footer is sticky** (`StepFrame`). It holds the main action
+  of each step. Do not put the only action of a step in the step body.
 
 ## Lint rules that fail most often
 
