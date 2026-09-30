@@ -933,13 +933,16 @@ function Timeline({
             </span>
             {e.bot && (
               <span className="flex items-center gap-0.5 border border-line2 pr-1.5 pl-0.5 font-mono text-[11.5px] text-fg2">
-                <Icon name="android" />
+                <Icon name="android" size={16} />
                 bot · {e.bot}
               </span>
             )}
             {more && (
               <span className="ml-auto text-fg3">
-                <Icon name={open ? "chevron-down" : "chevron-right"} />
+                <Icon
+                  name={open ? "chevron-down" : "chevron-right"}
+                  size={16}
+                />
               </span>
             )}
           </>
@@ -970,6 +973,8 @@ function Timeline({
             </span>
             <div className="flex min-w-0 flex-col gap-1.5">
               {more ? (
+                // On touch, the padding makes a 44 px target. The negative
+                // margin keeps the text on the line of the square.
                 <button
                   type="button"
                   aria-expanded={open}
@@ -982,7 +987,7 @@ function Timeline({
                       return next;
                     })
                   }
-                  className="flex min-h-6 flex-wrap items-center gap-x-2.5 gap-y-1.5 border-0 bg-transparent p-0 text-left text-fg max-md:min-h-11"
+                  className="flex min-h-6 flex-wrap items-center gap-x-2.5 gap-y-1.5 border-0 bg-transparent p-0 text-left text-fg max-md:-my-2.5 max-md:py-2.5"
                 >
                   {head}
                 </button>
