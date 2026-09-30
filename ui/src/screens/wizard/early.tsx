@@ -7,6 +7,7 @@ import {
   fixedIn,
   HowToFix,
   permName,
+  TOKEN_TEMPLATE_URL,
 } from "../../components/fix";
 import {
   Badge,
@@ -18,6 +19,7 @@ import {
   Notice,
   Select,
   SkeletonBlock,
+  TextLink,
   errorText,
 } from "../../components/ui";
 import { useApi, useNow } from "../../lib/hooks";
@@ -105,10 +107,12 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
               for each one, then check again. No redeploy needed.
             </span>
             <span>
-              The token needs these permissions: Email Sending Edit, Zone Read,
-              Queues Edit, Access: Apps and Policies Edit, Access:
-              Organizations, Identity Providers, and Groups Read, Workers
-              Scripts Edit.
+              Create the token with the{" "}
+              <TextLink href={TOKEN_TEMPLATE_URL}>token template</TextLink>. It
+              fills in the permissions. The token needs these permissions: Email
+              Sending Edit, Zone Read, Queues Edit, Access: Apps and Policies
+              Edit, Access: Organizations, Identity Providers, and Groups Read,
+              Workers Scripts Edit.
             </span>
           </Hint>
         </>

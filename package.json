@@ -35,7 +35,7 @@
         "description": "Generate it with `openssl rand -hex 32`. It signs the click tracking links and the dashboard sessions."
       },
       "CF_API_TOKEN": {
-        "description": "A [Cloudflare API token](https://dash.cloudflare.com/profile/api-tokens) with these permissions: **Email Sending Edit**, **Zone Read**, **Queues Edit**, **Access: Apps and Policies Edit**, **Access: Organizations, Identity Providers, and Groups Read**, **Workers Scripts Edit**."
+        "description": "Create it with the [token template](https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22email_sending%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22queues%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access_acct%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&name=fullsend). The template fills in these permissions: **Email Sending Edit**, **Zone Read**, **Queues Edit**, **Access: Apps and Policies Edit**, **Access: Organizations, Identity Providers, and Groups Read**, **Workers Scripts Edit**."
       },
       "CF_ACCOUNT_ID": {
         "description": "The ID of the account of `CF_API_TOKEN`."

@@ -22,12 +22,15 @@ export const CF_PERMISSIONS: {
   group: "Account" | "Zone";
   resource: string;
   access: "Read" | "Edit";
+  // The permission key of the dashboard token template.
+  template: string;
   // A short name for a compact list.
   label: string;
   use: string;
 }[] = [
   {
     key: "zone_read",
+    template: "zone",
     group: "Zone",
     resource: "Zone",
     access: "Read",
@@ -36,6 +39,7 @@ export const CF_PERMISSIONS: {
   },
   {
     key: "email_sending",
+    template: "email_sending",
     group: "Account",
     resource: "Email Sending",
     access: "Edit",
@@ -44,6 +48,7 @@ export const CF_PERMISSIONS: {
   },
   {
     key: "queues",
+    template: "queues",
     group: "Account",
     resource: "Queues",
     access: "Edit",
@@ -52,6 +57,7 @@ export const CF_PERMISSIONS: {
   },
   {
     key: "access",
+    template: "access",
     group: "Account",
     resource: "Access: Apps and Policies",
     access: "Edit",
@@ -60,6 +66,7 @@ export const CF_PERMISSIONS: {
   },
   {
     key: "access_org",
+    template: "access_acct",
     group: "Account",
     resource: "Access: Organizations, Identity Providers, and Groups",
     access: "Read",
@@ -68,6 +75,7 @@ export const CF_PERMISSIONS: {
   },
   {
     key: "workers_scripts",
+    template: "workers_scripts",
     group: "Account",
     resource: "Workers Scripts",
     access: "Edit",
@@ -108,6 +116,18 @@ export const fixedIn = (fix: Fix, d: CloudflareStatus): boolean =>
     : d.token_set && d.valid;
 
 const TOKENS_URL = "https://dash.cloudflare.com/profile/api-tokens";
+
+// An account token form with every permission of fullsend filled in. The
+// dashboard asks for the account first. README.md and the deploy form in
+// package.json have the same URL.
+export const TOKEN_TEMPLATE_URL = `https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=${encodeURIComponent(
+  JSON.stringify(
+    CF_PERMISSIONS.map((p) => ({
+      key: p.template,
+      type: p.access.toLowerCase(),
+    })),
+  ),
+)}&name=fullsend`;
 
 const WORKERS_URL =
   "https://dash.cloudflare.com/?to=/:account/workers-and-pages";
@@ -264,6 +284,13 @@ function FixSteps({ fix }: { fix: Fix }) {
             token value does not change, so the Worker secrets stay the same.
           </li>
         </Ol>
+        <span>
+          You can also{" "}
+          <TextLink href={TOKEN_TEMPLATE_URL}>
+            make a new token from the template
+          </TextLink>{" "}
+          and put its value in the <Code>CF_API_TOKEN</Code> secret.
+        </span>
         {(fix.missing.includes("access") ||
           fix.missing.includes("access_org")) && (
           <Notice tone="blue" title="No Zero Trust on the account?">
@@ -285,22 +312,23 @@ function FixSteps({ fix }: { fix: Fix }) {
           rolled the token, that it expired, or that <Code>CF_ACCOUNT_ID</Code>{" "}
           is for a different account. Open{" "}
           <TextLink href={TOKENS_URL}>API Tokens</TextLink> and find the token.
-          If it is gone, make a new one as in the next step.
+          If it is gone, make a new one as in the next steps.
         </li>
-      ) : (
-        <li>
-          Open <TextLink href={TOKENS_URL}>API Tokens</TextLink> in the
-          Cloudflare dashboard. Select <b>Create Token</b>, then{" "}
-          <b>Create Custom Token</b>.
-        </li>
-      )}
+      ) : null}
       <li>
-        Give the token these permissions:
-        <PermTable rows={CF_PERMISSIONS} />
-        Set <b>Account Resources</b> to this account, and <b>Zone Resources</b>{" "}
-        to the zones that you send from.
+        Open the <TextLink href={TOKEN_TEMPLATE_URL}>token template</TextLink>.
+        It fills in the permissions of fullsend. If Cloudflare asks for an
+        account, choose the account of this Worker.
       </li>
-      <li>Create the token and copy its value.</li>
+      <li>
+        Make sure that the form has these rows. Add a row that is not there:
+        <PermTable rows={CF_PERMISSIONS} />
+        Set the zone resources to the zones that you send from.
+      </li>
+      <li>
+        Select <b>Continue to summary</b>, then <b>Create Token</b>. Copy the
+        token value.
+      </li>
       <li>
         Copy the account ID. It is on the account home page (
         <TextLink href={ACCOUNT_ID_URL}>where to find it</TextLink>).

@@ -17,9 +17,10 @@ fullsend is an email API runs completely on Cloudflare. Supports the `resend` SD
    - `SETUP_TOKEN`: a long random string. It opens the first setup.
    - `SESSION_SECRET`: the output of `openssl rand -hex 32`.
    - `CF_API_TOKEN` and `CF_ACCOUNT_ID`: an API token and its account.
-     Permissions: Email Sending Edit, Zone Read, Queues Edit, Access: Apps
-     and Policies Edit, Access: Organizations, Identity Providers, and
-     Groups Read, Workers Scripts Edit.
+     Create the token with the [token template](https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22email_sending%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22queues%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access_acct%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&name=fullsend). The template
+     fills in these permissions: Email Sending Edit, Zone Read, Queues
+     Edit, Access: Apps and Policies Edit, Access: Organizations, Identity
+     Providers, and Groups Read, Workers Scripts Edit.
    - Keep "Protect with Cloudflare Access" off. fullsend makes its own
      Access applications in step 4, and the API paths must stay public.
 3. Open the Worker URL. Enter the setup token.
