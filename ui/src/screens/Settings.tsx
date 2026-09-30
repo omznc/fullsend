@@ -65,7 +65,7 @@ function Section({
         </h2>
         <span className="text-[13px] text-fg2">{help}</span>
       </div>
-      <div className="px-4 py-2 md:px-8">{children}</div>
+      <div className="py-2">{children}</div>
     </section>
   );
 }
@@ -80,7 +80,7 @@ function Row({
   children: ReactNode;
 }) {
   return (
-    <div className="grid min-h-[52px] items-center gap-x-4 gap-y-1.5 border-b border-line py-2.5 last:border-b-0 md:grid-cols-[240px_minmax(0,1fr)]">
+    <div className="grid min-h-[52px] items-center gap-x-4 gap-y-1.5 border-b border-line px-4 py-2.5 last:border-b-0 md:grid-cols-[240px_minmax(0,1fr)] md:px-8">
       <span className="flex flex-col">
         <span>{label}</span>
         {hint && <span className="text-[12.5px] text-fg3">{hint}</span>}
@@ -265,6 +265,7 @@ function CloudflareSection() {
     >
       {cf.error && !d ? (
         <Notice
+          className="mx-4 my-2 md:mx-8"
           tone="red"
           action={
             <Button onClick={() => void cf.reload()} icon="reload">
@@ -275,7 +276,11 @@ function CloudflareSection() {
           {errorText(cf.error)}
         </Notice>
       ) : !d ? (
-        <div aria-busy="true" aria-label="Loading" className="py-4">
+        <div
+          aria-busy="true"
+          aria-label="Loading"
+          className="px-4 py-4 md:px-8"
+        >
           <SkeletonBlock className="h-2.5 w-[60%]" />
         </div>
       ) : (

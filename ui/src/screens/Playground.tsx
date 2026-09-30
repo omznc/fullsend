@@ -490,7 +490,7 @@ export function Playground() {
         </EmptyState>
       ) : (
         <>
-          <Notice tone="amber" className="mx-4 mt-4 md:mx-8">
+          <Notice tone="amber" className="m-4 md:m-8">
             This form sends a real email.
           </Notice>
           <Form domains={verified} />
