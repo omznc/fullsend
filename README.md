@@ -7,7 +7,7 @@
 
 **An email API that runs completely on Cloudflare.**
 
-A drop-in replacement for the `resend` SDK, with [some limits](#differences-from-resend).
+A drop-in replacement that can use the `resend` SDK, with [some limits](#differences-from-resend).
 
 <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/omznc/fullsend">
   <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare">
@@ -34,49 +34,12 @@ A drop-in replacement for the `resend` SDK, with [some limits](#differences-from
 2. **Fill in the deploy form.**
    The form needs no values.
 
-   > [!IMPORTANT]
-   > Keep **"Protect with Cloudflare Access"** off. fullsend makes its own
-   > Access applications in step 4, and the API paths must stay public.
+ > [!IMPORTANT]
+ > Keep **"Protect with Cloudflare Access"** off. fullsend makes its own
+ > Access applications, and the API paths must stay public.
 
-3. **Open the Worker URL and paste an API token.**
-   Create a Cloudflare API token with the
-   [token template](https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22email_sending%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22queues%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access_acct%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&name=fullsend).
-   The template fills in these permissions:
-
-   | Permission                                          | Level |
-   | --------------------------------------------------- | ----- |
-   | Email Sending                                       | Edit  |
-   | Zone                                                | Read  |
-   | Queues                                              | Edit  |
-   | Access: Apps and Policies                           | Edit  |
-   | Access: Organizations, Identity Providers, and Groups | Read  |
-   | Workers Scripts                                     | Edit  |
-
-   The token proves that you own the deploy: its account must run this
-   Worker. fullsend saves the token and its account ID as the Worker
-   secrets `CF_API_TOKEN` and `CF_ACCOUNT_ID`.
-
-   > [!TIP]
-   > Without a token, use the setup code. The Worker writes it to its logs
-   > (**Workers & Pages → the Worker → Logs**) on the line `fullsend setup code`.
-
-4. **Choose the dashboard login.**
-   - **No Zero Trust:** click "use a password instead", set a password and
-     go to step 6.
-   - **Cloudflare Access:** give the API hostname (for example
-     `email.example.com`) and the owner's email. fullsend attaches the
-     hostname and makes two Access applications:
-
-     | Application          | What it does                                                                                 |
-     | -------------------- | -------------------------------------------------------------------------------------------- |
-     | `fullsend dashboard` | Protects the dashboard.                                                                      |
-     | `fullsend API`       | Keeps `/emails`, `/domains`, `/api-keys`, `/webhooks`, `/t` and `/health` public. These paths use API keys. |
-
-5. **Sign in through Access.**
-
-6. **Complete the setup wizard.**
-   The wizard onboards a sending domain, makes its event subscription,
-   makes the first API key and sends a test email.
+3. **Open the Worker URL.**
+   The setup page shows the remaining steps.
 
 > [!NOTE]
 > If you rename a queue or the Worker in the deploy form, set
@@ -97,7 +60,7 @@ pnpm exec wrangler d1 create fullsend
 pnpm run deploy
 ```
 
-Then continue at step 3.
+Then open the Worker URL.
 
 fullsend makes its session secret and its setup code in D1. To set your own
 values, set the `SESSION_SECRET` or `SETUP_TOKEN` secret with
@@ -315,5 +278,4 @@ rpc.d.ts              the RPC types for callers
 
 ## Thanks
 
-This project got ideas from [Emailflare](https://github.com/0xdps/emailflare).
-It is not a fork.
+This was inspired by [Emailflare](https://github.com/0xdps/emailflare), but it's not a fork.
