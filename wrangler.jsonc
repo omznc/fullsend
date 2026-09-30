@@ -3,7 +3,14 @@
   "name": "fullsend",
   "main": "worker/src/index.ts",
   "compatibility_date": "2026-08-15",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat",
+    // A fetch() to a host in the zone of the Worker goes through the public
+    // front door, with Access and the WAF, not directly to the origin. An
+    // attachment `path` thus cannot read an origin that only the Worker can
+    // reach.
+    "global_fetch_strictly_public"
+  ],
   "workers_dev": true,
   "observability": { "enabled": true },
   "assets": {
