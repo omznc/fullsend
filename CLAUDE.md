@@ -128,6 +128,10 @@ formats Markdown and JSON. `worker/migrations`, `pnpm-lock.yaml` and
 - **A new secret goes in three places:** `worker/src/env.ts`,
   `.dev.vars.example`, and the `cloudflare.bindings` block in the root
   `package.json` (the text of the deploy form).
+- **The deploy form makes each key in `.dev.vars.example` a required
+  field.** The form has no optional secret. Put an optional setting in
+  `vars` in `wrangler.jsonc` with a default, or tell the user to set the
+  secret after the deploy (see `AUTH_MODE` and `ADMIN_PASSWORD`).
 
 ## Gotchas
 

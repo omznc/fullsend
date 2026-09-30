@@ -1,12 +1,14 @@
+# The Deploy to Cloudflare button shows each key in this file as a required
+# field. Put only required secrets here.
+#
 # Opens the first setup, one time. Any long random string.
 SETUP_TOKEN=
 # openssl rand -hex 32. Signs tracking links and dashboard sessions.
 SESSION_SECRET=
-# Optional. Permissions: Email Sending Edit, Zone Read, Queues Edit,
+# Permissions: Email Sending Edit, Zone Read, Queues Edit,
 # Access: Apps and Policies Edit, Workers Scripts Edit.
 CF_API_TOKEN=
 # The account of CF_API_TOKEN.
 CF_ACCOUNT_ID=
-# Optional fallback login for an account without Zero Trust.
-AUTH_MODE=
-ADMIN_PASSWORD=
+# For local development, add AUTH_MODE=dev to your .dev.vars. For the
+# password login, set AUTH_MODE=password and the ADMIN_PASSWORD secret.

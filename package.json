@@ -35,16 +35,13 @@
         "description": "Generate it with `openssl rand -hex 32`. It signs the click tracking links and the dashboard sessions."
       },
       "CF_API_TOKEN": {
-        "description": "Optional, but without it each step is manual. A [Cloudflare API token](https://dash.cloudflare.com/profile/api-tokens) with these permissions: **Email Sending Edit**, **Zone Read**, **Queues Edit**, **Access: Apps and Policies Edit**, **Workers Scripts Edit**."
+        "description": "A [Cloudflare API token](https://dash.cloudflare.com/profile/api-tokens) with these permissions: **Email Sending Edit**, **Zone Read**, **Queues Edit**, **Access: Apps and Policies Edit**, **Workers Scripts Edit**."
       },
       "CF_ACCOUNT_ID": {
         "description": "The ID of the account of `CF_API_TOKEN`."
       },
       "AUTH_MODE": {
-        "description": "Leave it empty for Cloudflare Access (the default). Set `password` only for an account without Zero Trust."
-      },
-      "ADMIN_PASSWORD": {
-        "description": "Only for `AUTH_MODE=password`: the dashboard password. The password login also needs `SESSION_SECRET`. Leave it empty for Cloudflare Access."
+        "description": "Keep `access` for Cloudflare Access. Set `password` only for an account without Zero Trust, then set the `ADMIN_PASSWORD` secret after the deploy."
       },
       "WORKER_NAME": {
         "description": "The name of this Worker. Change it if you change the Worker name in this form."

@@ -16,9 +16,13 @@ fullsend is an email API runs completely on Cloudflare. Supports the `resend` SD
 2. In the deploy form, set these values:
    - `SETUP_TOKEN`: a long random string. It opens the first setup.
    - `SESSION_SECRET`: the output of `openssl rand -hex 32`.
-   - `CF_API_TOKEN` and `CF_ACCOUNT_ID`: optional. Without them, each step
-     is manual. Permissions: Email Sending Edit, Zone Read, Queues Edit,
-     Access: Apps and Policies Edit, Workers Scripts Edit.
+   - `CF_API_TOKEN` and `CF_ACCOUNT_ID`: an API token and its account.
+     Permissions: Email Sending Edit, Zone Read, Queues Edit, Access: Apps
+     and Policies Edit, Workers Scripts Edit.
+   - `AUTH_MODE`: keep `access`. For an account without Zero Trust, set
+     `password`, and after the deploy set the `ADMIN_PASSWORD` secret.
+   - Keep "Protect with Cloudflare Access" off. fullsend makes its own
+     Access applications in step 4, and the API paths must stay public.
 3. Open the Worker URL. Enter the setup token.
 4. Give the API hostname (for example `email.example.com`) and the owner's
    email. fullsend attaches the hostname and makes two Cloudflare Access
