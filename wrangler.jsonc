@@ -67,9 +67,6 @@
     "crons": ["* * * * *"]
   },
   "vars": {
-    // "access" (Cloudflare Access) or "password". The password login also
-    // needs the ADMIN_PASSWORD secret.
-    "AUTH_MODE": "access",
     "WORKER_NAME": "fullsend",
     "EVENTS_QUEUE_NAME": "fullsend-events"
   }

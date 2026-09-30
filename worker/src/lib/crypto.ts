@@ -88,3 +88,51 @@ export function safeEqual(a: string, b: string): boolean {
 
   return diff === 0;
 }
+
+// PBKDF2 with SHA-256. workerd allows at most 100000 iterations.
+const PBKDF2_ITERATIONS = 100_000;
+
+async function pbkdf2(
+  password: string,
+  salt: Uint8Array,
+  iterations: number,
+): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+
+  return new Uint8Array(
+    await crypto.subtle.deriveBits(
+      { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+      key,
+      256,
+    ),
+  );
+}
+
+// Returns "pbkdf2$<iterations>$<salt>$<hash>", with base64url parts.
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await pbkdf2(password, salt, PBKDF2_ITERATIONS);
+
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${toBase64Url(salt)}$${toBase64Url(hash)}`;
+}
+
+export async function verifyPassword(
+  password: string,
+  stored: string,
+): Promise<boolean> {
+  const [scheme, iterations, salt, hash] = stored.split("$");
+
+  if (scheme !== "pbkdf2" || !iterations || !salt || !hash) return false;
+  const n = Number(iterations);
+
+  if (!Number.isInteger(n) || n < 1 || n > PBKDF2_ITERATIONS) return false;
+  const saltBytes = fromBase64(salt.replaceAll("-", "+").replaceAll("_", "/"));
+
+  return safeEqual(toBase64Url(await pbkdf2(password, saltBytes, n)), hash);
+}

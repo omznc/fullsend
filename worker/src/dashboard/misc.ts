@@ -1,7 +1,9 @@
 import { Hono } from "hono";
+import { setCookie } from "hono/cookie";
 import { listDomains } from "../domains/service";
 import { normalize, parseAddress } from "../lib/address";
 import { Cloudflare, CloudflareError, hasToken } from "../lib/cloudflare";
+import { hashPassword } from "../lib/crypto";
 import { validation } from "../lib/errors";
 import { asRecord, isHostname, readJson } from "../lib/http";
 import { isString } from "../lib/json";
@@ -14,8 +16,9 @@ import {
 import { DAY, iso } from "../lib/time";
 import { parseAddressColumn } from "../send/consumer";
 import { parsePage } from "../send/manage";
-import type { DashVars } from "./auth";
+import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
 import { dashDomain } from "./domains";
+import { cookieOpts, MIN_PASSWORD } from "./setup";
 
 export const miscRoutes = new Hono<DashVars>();
 
@@ -512,7 +515,7 @@ miscRoutes.get("/settings", async (c) => {
     },
     cloudflare_token_set: hasToken(c.env),
     session_secret_set: Boolean(c.env.SESSION_SECRET),
-    auth_mode: c.env.AUTH_MODE === "password" ? "password" : "access",
+    auth_mode: s.auth_mode === "password" ? "password" : "access",
   });
 });
 
@@ -545,22 +548,28 @@ miscRoutes.patch("/settings", async (c) => {
   return c.json({ ok: true });
 });
 
-// Sets a new ADMIN_PASSWORD secret on the Worker (password mode).
+// Changes the dashboard password (password mode). The new hash also ends
+// every old session, so this sets a new session cookie.
 miscRoutes.post("/settings/password", async (c) => {
   const body = asRecord(await readJson(c));
+  const s = await getSettings(c.env);
 
-  if (!isString(body.password) || body.password.length < 12) {
-    throw validation("The password must have 12 characters or more.");
+  if (s.auth_mode !== "password")
+    throw validation("This deploy uses Cloudflare Access, not a password.");
+
+  if (!isString(body.password) || body.password.length < MIN_PASSWORD) {
+    throw validation(
+      `The password must have ${MIN_PASSWORD} characters or more.`,
+    );
   }
 
-  if (!hasToken(c.env))
-    throw validation(
-      "fullsend needs CF_API_TOKEN to change a secret. Use `cf` or the Cloudflare dashboard.",
-    );
-  await new Cloudflare(c.env).putSecret(
-    c.env.WORKER_NAME,
-    "ADMIN_PASSWORD",
-    body.password,
+  const hash = await hashPassword(body.password);
+  await setSettings(c.env, { password_hash: hash });
+  setCookie(
+    c,
+    SESSION_COOKIE,
+    await signToken(c.env, "admin", SESSION_TTL, hash),
+    cookieOpts(SESSION_TTL),
   );
 
   return c.json({ ok: true });

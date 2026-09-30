@@ -29,7 +29,7 @@
   "cloudflare": {
     "bindings": {
       "SETUP_TOKEN": {
-        "description": "A long random string, for example from `openssl rand -hex 24`. It opens the first setup of the dashboard one time. Keep it until the setup is done."
+        "description": "A long random string, for example from `openssl rand -hex 24`. It opens the first setup of the dashboard one time. In that setup, you choose Cloudflare Access or a password for the dashboard."
       },
       "SESSION_SECRET": {
         "description": "Generate it with `openssl rand -hex 32`. It signs the click tracking links and the dashboard sessions."
@@ -39,9 +39,6 @@
       },
       "CF_ACCOUNT_ID": {
         "description": "The ID of the account of `CF_API_TOKEN`."
-      },
-      "AUTH_MODE": {
-        "description": "Keep `access` for Cloudflare Access. Set `password` only for an account without Zero Trust, then set the `ADMIN_PASSWORD` secret after the deploy."
       },
       "WORKER_NAME": {
         "description": "The name of this Worker. Change it if you change the Worker name in this form."

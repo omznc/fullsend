@@ -10,5 +10,5 @@ SESSION_SECRET=
 CF_API_TOKEN=
 # The account of CF_API_TOKEN.
 CF_ACCOUNT_ID=
-# For local development, add AUTH_MODE=dev to your .dev.vars. For the
-# password login, set AUTH_MODE=password and the ADMIN_PASSWORD secret.
+# For a local dashboard without a login, add AUTH_MODE=dev to your
+# .dev.vars. The first setup chooses Access or a password, not this file.

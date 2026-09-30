@@ -19,20 +19,20 @@ fullsend is an email API runs completely on Cloudflare. Supports the `resend` SD
    - `CF_API_TOKEN` and `CF_ACCOUNT_ID`: an API token and its account.
      Permissions: Email Sending Edit, Zone Read, Queues Edit, Access: Apps
      and Policies Edit, Workers Scripts Edit.
-   - `AUTH_MODE`: keep `access`. For an account without Zero Trust, set
-     `password`, and after the deploy set the `ADMIN_PASSWORD` secret.
    - Keep "Protect with Cloudflare Access" off. fullsend makes its own
      Access applications in step 4, and the API paths must stay public.
 3. Open the Worker URL. Enter the setup token.
-4. Give the API hostname (for example `email.example.com`) and the owner's
+4. Choose the dashboard login. For an account without Zero Trust, click
+   "use a password instead", set a password and go to step 6. For Access,
+   give the API hostname (for example `email.example.com`) and the owner's
    email. fullsend attaches the hostname and makes two Cloudflare Access
    applications:
    - "fullsend dashboard" protects the dashboard.
    - "fullsend API" keeps `/emails`, `/domains`, `/api-keys`, `/webhooks`,
      `/t` and `/health` public. These paths use API keys.
-5. Sign in through Access. The setup wizard onboards a sending domain,
-   makes its event subscription, makes the first API key and sends a test
-   email.
+5. Sign in through Access.
+6. The setup wizard onboards a sending domain, makes its event
+   subscription, makes the first API key and sends a test email.
 
 If you rename a queue or the Worker in the deploy form, set
 `EVENTS_QUEUE_NAME` or `WORKER_NAME` to the new name.

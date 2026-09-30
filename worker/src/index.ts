@@ -84,7 +84,10 @@ app.route("/api", dashboardApi);
 app.all("*", async (c) => {
   const settings = await getSettings(c.env);
 
-  if (authMode(c.env, c.req.url) === "access" && accessConfigured(settings)) {
+  if (
+    authMode(c.env, c.req.url, settings) === "access" &&
+    accessConfigured(settings)
+  ) {
     const session = await resolveSession(c);
 
     if (!session.identity) {

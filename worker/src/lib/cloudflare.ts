@@ -241,18 +241,6 @@ export class Cloudflare {
     });
   }
 
-  // Workers
-
-  async putSecret(script: string, name: string, value: string): Promise<void> {
-    await this.call<JsonValue>(
-      `${this.acct}/workers/scripts/${script}/secrets`,
-      {
-        method: "PUT",
-        body: JSON.stringify({ name, text: value, type: "secret_text" }),
-      },
-    );
-  }
-
   // Workers custom domains
 
   workerDomains(service: string): Promise<WorkerDomain[]> {

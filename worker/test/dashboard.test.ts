@@ -1,8 +1,6 @@
-import { createExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { signToken } from "../src/dashboard/auth";
-import worker from "../src/index";
 import { call } from "./helpers";
 
 const json = {
@@ -10,8 +8,15 @@ const json = {
   "X-Fullsend-Dashboard": "1",
 };
 
+// The last cookie in the response that has a value. A response can also
+// delete a cookie.
 function cookieFrom(res: Response): string {
-  return (res.headers.get("Set-Cookie") ?? "").split(";")[0]!;
+  const set = res.headers
+    .getSetCookie()
+    .map((c) => c.split(";")[0]!)
+    .filter((c) => !c.endsWith("="));
+
+  return set.at(-1) ?? "";
 }
 
 describe("dashboard auth", () => {
@@ -100,48 +105,93 @@ describe("dashboard auth", () => {
 });
 
 describe("password mode", () => {
-  const pwEnv = {
-    ...env,
-    AUTH_MODE: "password",
-    ADMIN_PASSWORD: "correct horse battery",
-  };
+  // The bodies of the setup, login and password routes.
+  interface Body {
+    token?: string;
+    password?: string;
+  }
 
-  const request = (path: string, init: RequestInit = {}) =>
-    worker.fetch(
-      new Request(`http://fullsend.test${path}`, init),
-      pwEnv,
-      createExecutionContext(),
+  const post = (path: string, body: Body, cookie = "") =>
+    call(path, {
+      method: "POST",
+      headers: cookie ? { ...json, Cookie: cookie } : json,
+      body: JSON.stringify(body),
+    });
+
+  const emails = (cookie: string) =>
+    call("/api/emails", { headers: { Cookie: cookie } });
+
+  it("sets a password in the first setup", async () => {
+    // D1 keeps the rows of the tests above in this file.
+    await env.DB.prepare("DELETE FROM settings").run();
+
+    // Without the setup cookie, nobody can choose the password.
+    expect(
+      (await post("/api/setup/password", { password: "x".repeat(20) })).status,
+    ).toBe(401);
+
+    const setup = cookieFrom(
+      await post("/api/setup/unlock", { token: "test-setup-token" }),
     );
 
-  it("does not accept a setup token as a session", async () => {
-    const unlock = await request("/api/setup/unlock", {
-      method: "POST",
-      headers: json,
-      body: JSON.stringify({ token: "test-setup-token" }),
-    });
+    expect(
+      (await post("/api/setup/password", { password: "short" }, setup)).status,
+    ).not.toBe(200);
 
-    expect(unlock.status).toBe(403);
+    const first = await post(
+      "/api/setup/password",
+      { password: "correct horse battery" },
+      setup,
+    );
 
-    const setup = await signToken(pwEnv, "setup", 60);
+    expect(first.status).toBe(200);
+    const session = cookieFrom(first);
+    expect((await emails(session)).status).toBe(200);
 
-    const forged = await request("/api/emails", {
-      headers: { Cookie: `fs_session=${setup}` },
-    });
+    const state = await (
+      await call("/api/session")
+    ).json<{ state: string; mode: string }>();
 
-    expect(forged.status).toBe(401);
+    expect(state).toMatchObject({ state: "login", mode: "password" });
 
-    const login = await request("/api/auth/login", {
-      method: "POST",
-      headers: json,
-      body: JSON.stringify({ password: "correct horse battery" }),
+    // The setup token and the old setup cookie open nothing now.
+    expect(
+      (await post("/api/setup/unlock", { token: "test-setup-token" })).status,
+    ).toBe(403);
+    expect(
+      (await post("/api/setup/password", { password: "y".repeat(20) }, setup))
+        .status,
+    ).toBe(401);
+
+    // A setup token is not a session.
+    const forged = await signToken(env, "setup", 60);
+    expect((await emails(`fs_session=${forged}`)).status).toBe(401);
+
+    expect(
+      (await post("/api/auth/login", { password: "wrong horse battery" }))
+        .status,
+    ).toBe(403);
+
+    const login = await post("/api/auth/login", {
+      password: "correct horse battery",
     });
 
     expect(login.status).toBe(200);
+    expect((await emails(cookieFrom(login))).status).toBe(200);
 
-    const ok = await request("/api/emails", {
-      headers: { Cookie: cookieFrom(login) },
-    });
+    // A new password ends the old sessions.
+    const change = await post(
+      "/api/settings/password",
+      { password: "a new long password" },
+      session,
+    );
 
-    expect(ok.status).toBe(200);
+    expect(change.status).toBe(200);
+    expect((await emails(session)).status).toBe(401);
+    expect((await emails(cookieFrom(change))).status).toBe(200);
+    expect(
+      (await post("/api/auth/login", { password: "a new long password" }))
+        .status,
+    ).toBe(200);
   });
 });

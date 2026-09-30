@@ -32,6 +32,7 @@ export interface Env {
   SESSION_SECRET?: string;
   CF_API_TOKEN?: string;
   CF_ACCOUNT_ID?: string;
+  // Only "dev", for a local dashboard without a login. The first setup
+  // chooses Access or a password, and D1 stores the choice.
   AUTH_MODE?: string;
-  ADMIN_PASSWORD?: string;
 }

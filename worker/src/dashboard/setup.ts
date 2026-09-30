@@ -1,13 +1,12 @@
 import { Hono } from "hono";
 import { deleteCookie, setCookie } from "hono/cookie";
 import { Cloudflare, CloudflareError, hasToken } from "../lib/cloudflare";
-import { safeEqual } from "../lib/crypto";
+import { hashPassword, safeEqual, verifyPassword } from "../lib/crypto";
 import { validation } from "../lib/errors";
 import { asRecord, isHostname, readJson } from "../lib/http";
 import { isString } from "../lib/json";
 import { getSettings, type Settings, setSettings } from "../lib/settings";
 import {
-  authMode,
   type DashVars,
   requireSetup,
   resolveSession,
@@ -15,6 +14,7 @@ import {
   SESSION_TTL,
   SETUP_COOKIE,
   SETUP_TTL_SECONDS,
+  setupOpen,
   signToken,
   verifyAccessJwt,
 } from "./auth";
@@ -32,7 +32,7 @@ export const PUBLIC_PATHS = [
   "/health",
 ];
 
-const cookieOpts = (maxAge: number) => ({
+export const cookieOpts = (maxAge: number) => ({
   httpOnly: true,
   secure: true,
   sameSite: "Lax" as const,
@@ -72,21 +72,12 @@ setupRoutes.post("/setup/unlock", async (c) => {
   const body = asRecord(await readJson(c));
   const settings = await getSettings(c.env);
 
-  if (authMode(c.env, c.req.url) !== "access") {
+  if (!setupOpen(settings)) {
     return c.json(
       {
-        error: "not_access_mode",
-        message: "The setup token is only for the Access setup.",
-      },
-      403,
-    );
-  }
-
-  if (settings.access_team_domain && settings.access_aud) {
-    return c.json(
-      {
-        error: "access_configured",
-        message: "Access is set up. The setup token no longer opens anything.",
+        error: "setup_done",
+        message:
+          "The login is set up. The setup token no longer opens anything.",
       },
       403,
     );
@@ -325,7 +316,50 @@ setupRoutes.post("/setup/access/manual", requireSetup, async (c) => {
   return c.json({ ok: true });
 });
 
-// Password fallback.
+export const MIN_PASSWORD = 12;
+
+// The password login, for an account without Zero Trust. The first setup
+// chooses it in place of Access. After this, the setup token opens nothing.
+setupRoutes.post("/setup/password", requireSetup, async (c) => {
+  if (!c.env.SESSION_SECRET) {
+    return c.json(
+      {
+        error: "no_session_secret",
+        message: "Set SESSION_SECRET on the Worker to use the password login.",
+      },
+      500,
+    );
+  }
+
+  const body = asRecord(await readJson(c));
+
+  if (!isString(body.password) || body.password.length < MIN_PASSWORD)
+    throw validation(
+      `The password must have ${MIN_PASSWORD} characters or more.`,
+    );
+
+  const settings = await getSettings(c.env);
+
+  if (!setupOpen(settings))
+    return c.json(
+      { error: "setup_done", message: "The login is set up." },
+      403,
+    );
+
+  const hash = await hashPassword(body.password);
+  await setSettings(c.env, { auth_mode: "password", password_hash: hash });
+  deleteCookieSafe(c);
+  setCookie(
+    c,
+    SESSION_COOKIE,
+    await signToken(c.env, "admin", SESSION_TTL, hash),
+    cookieOpts(SESSION_TTL),
+  );
+
+  return c.json({ ok: true });
+});
+
+// The password login.
 setupRoutes.post("/auth/login", async (c) => {
   const session = await resolveSession(c);
 
@@ -343,10 +377,11 @@ setupRoutes.post("/auth/login", async (c) => {
   }
 
   const body = asRecord(await readJson(c));
+  const { password_hash: hash } = await getSettings(c.env);
 
   if (
     !isString(body.password) ||
-    !safeEqual(body.password, c.env.ADMIN_PASSWORD ?? "")
+    !(await verifyPassword(body.password, hash))
   ) {
     await new Promise((r) => setTimeout(r, 500));
 
@@ -359,7 +394,7 @@ setupRoutes.post("/auth/login", async (c) => {
   setCookie(
     c,
     SESSION_COOKIE,
-    await signToken(c.env, "admin", SESSION_TTL),
+    await signToken(c.env, "admin", SESSION_TTL, hash),
     cookieOpts(SESSION_TTL),
   );
 

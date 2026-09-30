@@ -7,6 +7,11 @@ export const DEFAULTS = {
   access_team_domain: "",
   access_aud: "",
   access_app_ids: "",
+  // "password" after the owner chose the password login in the first
+  // setup. Empty means Cloudflare Access.
+  auth_mode: "",
+  // The PBKDF2 hash of the dashboard password (see hashPassword).
+  password_hash: "",
   // Hostnames that the setup attached to the Worker.
   api_hostname: "",
   tracking_hostname: "",

@@ -129,9 +129,10 @@ formats Markdown and JSON. `worker/migrations`, `pnpm-lock.yaml` and
   `.dev.vars.example`, and the `cloudflare.bindings` block in the root
   `package.json` (the text of the deploy form).
 - **The deploy form makes each key in `.dev.vars.example` a required
-  field.** The form has no optional secret. Put an optional setting in
-  `vars` in `wrangler.jsonc` with a default, or tell the user to set the
-  secret after the deploy (see `AUTH_MODE` and `ADMIN_PASSWORD`).
+  field.** The form has no optional secret, no dropdown and no conditional
+  field. Put an optional setting in `vars` in `wrangler.jsonc` with a
+  default. Put a choice of the owner in the first setup and store it in the
+  D1 settings. The dashboard login (Access or a password) works this way.
 
 ## Gotchas
 

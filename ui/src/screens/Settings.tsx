@@ -327,7 +327,7 @@ function CloudflareSection() {
   );
 }
 
-function PasswordRow({ tokenSet }: { tokenSet: boolean }) {
+function PasswordRow() {
   const toast = useToast();
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
@@ -354,40 +354,33 @@ function PasswordRow({ tokenSet }: { tokenSet: boolean }) {
   return (
     <Row
       label="Password"
-      hint="12 characters or more. fullsend sets it as the ADMIN_PASSWORD secret."
+      hint="12 characters or more. The change signs out every other session."
     >
-      {tokenSet ? (
-        <Field
-          label={<span className="sr-only">New password</span>}
-          error={error}
-        >
-          <span className="flex items-center gap-2">
-            <Input
-              type="password"
-              autoComplete="new-password"
-              value={pw}
-              placeholder="new password"
-              invalid={Boolean(error)}
-              onChange={(e) => setPw(e.target.value)}
-              className="w-[220px]"
-            />
-            <Button
-              variant="primary"
-              busy={busy}
-              disabled={pw.length < 12}
-              onClick={() => void save()}
-              className="max-md:h-11"
-            >
-              change
-            </Button>
-          </span>
-        </Field>
-      ) : (
-        <span className="text-fg2">
-          fullsend needs CF_API_TOKEN to change a secret. Use `cf` or the
-          Cloudflare dashboard.
+      <Field
+        label={<span className="sr-only">New password</span>}
+        error={error}
+      >
+        <span className="flex items-center gap-2">
+          <Input
+            type="password"
+            autoComplete="new-password"
+            value={pw}
+            placeholder="new password"
+            invalid={Boolean(error)}
+            onChange={(e) => setPw(e.target.value)}
+            className="w-[220px]"
+          />
+          <Button
+            variant="primary"
+            busy={busy}
+            disabled={pw.length < 12}
+            onClick={() => void save()}
+            className="max-md:h-11"
+          >
+            change
+          </Button>
         </span>
-      )}
+      </Field>
     </Row>
   );
 }
@@ -406,7 +399,7 @@ function AccessSection({ data }: { data: SettingsData }) {
       }
     >
       {password ? (
-        <PasswordRow tokenSet={data.cloudflare_token_set} />
+        <PasswordRow />
       ) : (
         <>
           <Row label="Team domain">

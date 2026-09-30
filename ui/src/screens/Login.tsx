@@ -209,11 +209,6 @@ function Locked({
           unlock
         </Button>
       </form>
-      {session.mode === "password" && (
-        <ButtonLink href="/" variant="ghost">
-          use a password instead
-        </ButtonLink>
-      )}
     </Layout>
   );
 }
@@ -273,6 +268,18 @@ function AccessSetup({
   // null: follow what the Worker says. true: the owner chose the manual steps.
   const [forceManual, setForceManual] = useState<boolean | null>(null);
   const [done, setDone] = useState<SetupResult | null>(null);
+  // The owner chose a password in place of Access.
+  const [password, setPassword] = useState(false);
+
+  if (password)
+    return (
+      <Layout hero={HERO.pw} session={session}>
+        <PasswordSetup />
+        <SmallLink onClick={() => setPassword(false)}>
+          use Cloudflare Access instead
+        </SmallLink>
+      </Layout>
+    );
 
   if (error)
     return (
@@ -343,6 +350,9 @@ function AccessSetup({
           set it up automatically instead
         </SmallLink>
       )}
+      <SmallLink onClick={() => setPassword(true)}>
+        use a password instead
+      </SmallLink>
     </Layout>
   );
 }
@@ -647,6 +657,88 @@ function ManualForm({
           zero trust
         </ButtonLink>
       </div>
+    </form>
+  );
+}
+
+const MIN_PASSWORD = 12;
+
+// The password login, in place of Access. After this step, the setup token
+// opens nothing.
+function PasswordSetup() {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const short = password.length > 0 && password.length < MIN_PASSWORD;
+  const differ = confirm.length > 0 && confirm !== password;
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    api("/setup/password", { method: "POST", body: { password } })
+      .then(() => {
+        // The session cookie is set. A full load reads the new state.
+        window.location.reload();
+
+        return null;
+      })
+      .catch((cause: unknown) => {
+        setError(errorText(cause));
+        setBusy(false);
+      });
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-4.5">
+      <Heading title="Protect it with a password">
+        Use this if your account has no Zero Trust. One password opens the
+        dashboard. Your API keys do not change.
+      </Heading>
+      <Field
+        label="Password"
+        hint={`${MIN_PASSWORD} characters or more`}
+        error={short ? `Use ${MIN_PASSWORD} characters or more.` : undefined}
+      >
+        <Input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          invalid={short}
+          autoComplete="new-password"
+          autoFocus
+          className="h-11 md:h-10"
+        />
+      </Field>
+      <Field
+        label="Password again"
+        error={differ ? "The two passwords are not the same." : undefined}
+      >
+        <Input
+          type="password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          invalid={differ}
+          autoComplete="new-password"
+          className="h-11 md:h-10"
+        />
+      </Field>
+      {error && (
+        <Notice tone="red" icon="alert">
+          {error}
+        </Notice>
+      )}
+      <Button
+        type="submit"
+        variant="primary"
+        icon="lock"
+        busy={busy}
+        disabled={password.length < MIN_PASSWORD || confirm !== password}
+        className={wide}
+      >
+        set the password
+      </Button>
     </form>
   );
 }

@@ -59,6 +59,12 @@ first.
   `src/index.ts` returns 404 for other paths on it.
 - **The `api_key_id` column is not always a key id.** It can hold
   `rpc:<caller>` or `dashboard:<identity>` (`src/db/schema.ts`).
+- **The first setup chooses the dashboard login.** The `auth_mode` and
+  `password_hash` settings hold the choice, not env vars. The setup token
+  opens the setup only while `setupOpen()` in `src/dashboard/auth.ts` is
+  true: no Access and no password yet. `AUTH_MODE` in env is only for
+  `dev`. A session key also holds the password hash, so a new password
+  ends the old sessions.
 - **`SESSION_SECRET` signs the dashboard sessions and the click links.** A
   setup token can fall back to `SETUP_TOKEN` as its key. A session token
   cannot (`signingKey` in `src/dashboard/auth.ts`).
@@ -95,5 +101,7 @@ first.
 - The Cloudflare API has no live calls in tests. `test/cloudflare.test.ts`
   replaces `globalThis.fetch` with a fake that fails on an unknown route.
 - The test host is not `localhost`, so `AUTH_MODE=dev` does not work
-  there. `test/dashboard.test.ts` uses `AUTH_MODE: "password"` in its env,
-  the setup token flow, or Access settings that it inserts into D1.
+  there. `test/dashboard.test.ts` uses the setup token flow, or Access
+  settings that it inserts into D1.
+- D1 keeps its rows between the tests of one file. A test that needs a
+  fresh setup deletes the `settings` rows first.

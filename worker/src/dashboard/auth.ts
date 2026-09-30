@@ -10,8 +10,9 @@ import { getSettings, type Settings } from "../lib/settings";
 // Dashboard auth:
 // - "access": Cloudflare Access. The default. Without a valid Access JWT,
 //   the dashboard fails closed.
-// - "password": ADMIN_PASSWORD, for an account without Zero Trust.
-// - "dev": no login, only on localhost.
+// - "password": a password that the owner chose in the first setup, for an
+//   account without Zero Trust. D1 stores its hash.
+// - "dev": no login, only on localhost, with AUTH_MODE=dev.
 export type AuthMode = "access" | "password" | "dev";
 
 export type DashVars = { Bindings: Env; Variables: { identity: string } };
@@ -24,19 +25,21 @@ const SETUP_TTL = 3600;
 
 export const SESSION_TTL = 7 * 86_400;
 
-export function authMode(env: Env, url: string): AuthMode {
-  const mode = env.AUTH_MODE?.toLowerCase();
-
-  if (mode === "dev") {
+export function authMode(env: Env, url: string, s: Settings): AuthMode {
+  if (env.AUTH_MODE?.trim().toLowerCase() === "dev") {
     const host = new URL(url).hostname;
 
     if (host === "localhost" || host === "127.0.0.1") return "dev";
   }
 
-  if (mode === "password" && env.ADMIN_PASSWORD) return "password";
+  if (s.auth_mode === "password" && s.password_hash) return "password";
 
   return "access";
 }
+
+// The first setup is open while the owner has chosen no login.
+export const setupOpen = (s: Settings) =>
+  !accessConfigured(s) && !(s.auth_mode === "password" && s.password_hash);
 
 export const accessConfigured = (s: Settings) =>
   Boolean(s.access_team_domain && s.access_aud);
@@ -45,9 +48,11 @@ export type TokenKind = "setup" | "admin";
 
 // A setup token can use SETUP_TOKEN as the key when SESSION_SECRET is not
 // set. A session token needs SESSION_SECRET: a person with the setup token
-// must not be able to make a session.
-function signingKey(env: Env, kind: TokenKind): string | null {
-  if (kind === "admin") return env.SESSION_SECRET || null;
+// must not be able to make a session. The key of a session token also holds
+// the password hash, so a new password ends all old sessions.
+function signingKey(env: Env, kind: TokenKind, bind: string): string | null {
+  if (kind === "admin")
+    return env.SESSION_SECRET ? `${env.SESSION_SECRET}:${bind}` : null;
 
   return env.SESSION_SECRET || env.SETUP_TOKEN || null;
 }
@@ -57,8 +62,9 @@ export async function signToken(
   env: Env,
   kind: TokenKind,
   ttlSeconds: number,
+  bind = "",
 ): Promise<string> {
-  const key = signingKey(env, kind);
+  const key = signingKey(env, kind, bind);
 
   if (!key) throw new Error("SESSION_SECRET is not set");
   const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
@@ -72,8 +78,9 @@ export async function readToken(
   env: Env,
   kind: TokenKind,
   token: string | undefined,
+  bind = "",
 ): Promise<boolean> {
-  const key = signingKey(env, kind);
+  const key = signingKey(env, kind, bind);
 
   if (!token || !key) return false;
   const parts = token.split(".");
@@ -138,8 +145,8 @@ export interface Session {
 
 export async function resolveSession(c: Context<DashVars>): Promise<Session> {
   const env = c.env;
-  const mode = authMode(env, c.req.url);
   const settings = await getSettings(env);
+  const mode = authMode(env, c.req.url, settings);
   const configured = accessConfigured(settings);
 
   const session: Session = {
@@ -160,6 +167,7 @@ export async function resolveSession(c: Context<DashVars>): Promise<Session> {
       env,
       "admin",
       getCookie(c, SESSION_COOKIE),
+      settings.password_hash,
     ))
       ? "admin"
       : null;
@@ -183,7 +191,8 @@ export async function resolveSession(c: Context<DashVars>): Promise<Session> {
     return session;
   }
 
-  session.setup = await readToken(env, "setup", getCookie(c, SETUP_COOKIE));
+  if (setupOpen(settings))
+    session.setup = await readToken(env, "setup", getCookie(c, SETUP_COOKIE));
 
   return session;
 }
