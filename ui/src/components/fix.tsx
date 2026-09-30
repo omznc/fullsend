@@ -134,7 +134,7 @@ const FIXED: Record<Fix["kind"], string> = {
 export function HowToFix({
   fix,
   check,
-  label = "how to fix?",
+  label = "How to fix?",
   className,
 }: {
   fix: Fix;
@@ -183,7 +183,7 @@ export function HowToFix({
           setError(null);
           setOpen(true);
         }}
-        className={`inline-flex items-center self-start border-0 bg-transparent p-0 font-mono text-[12.5px] text-fg underline underline-offset-3 hover:text-accent-fg ${className ?? ""}`}
+        className={`flex w-fit items-center border-0 bg-transparent p-0 font-mono text-[12.5px] text-fg underline underline-offset-3 hover:text-accent-fg ${className ?? ""}`}
       >
         {label}
       </button>

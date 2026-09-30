@@ -653,9 +653,7 @@ function ManualForm({
       {data.reason && (
         <Notice tone="blue" title="Why not automatic">
           {data.reason}
-          {fix && (
-            <HowToFix fix={fix} check={recheck} className="mt-1.5 block" />
-          )}
+          {fix && <HowToFix fix={fix} check={recheck} className="mt-1.5" />}
         </Notice>
       )}
       <div className="flex gap-2">

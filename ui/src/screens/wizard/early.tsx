@@ -95,7 +95,7 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
             <HowToFix
               fix={{ kind: "token_missing" }}
               check={checkFor({ kind: "token_missing" })}
-              className="mt-1.5 block"
+              className="mt-1.5"
             />
           </Notice>
           <Hint title="Set the token">
@@ -119,7 +119,7 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
             <HowToFix
               fix={{ kind: "token_invalid" }}
               check={checkFor({ kind: "token_invalid" })}
-              className="mt-1.5 block"
+              className="mt-1.5"
             />
           </Notice>
           <Hint>
