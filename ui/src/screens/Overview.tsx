@@ -168,6 +168,7 @@ function Story({
   const onWay = Math.max(0, sent - delivered - bounced);
   const arrived = sent ? Math.round((delivered / sent) * 100) : 0;
   const spam = Math.round((data.complaint_rate.value ?? 0) * 10_000);
+  const complained = count("complained")?.value ?? 0;
   const words = WORDS[period];
 
   // Squares of the waffle: 1% each. A bounce always gets one square.
@@ -255,10 +256,18 @@ function Story({
             You sent{" "}
             <span className="font-mono font-semibold">{number(sent)}</span>{" "}
             {sent === 1 ? "email" : "emails"}.{" "}
-            <span className="text-green">{arrived} of every 100 arrived.</span>{" "}
+            {/* A rate reads well only when the count is larger than its
+                base. Below that, show the counts. */}
+            <span className="text-green">
+              {sent < 100
+                ? `${number(delivered)} arrived.`
+                : `${arrived} of every 100 arrived.`}
+            </span>{" "}
             <span className="text-fg2">
-              {bounced} bounced, and {spam} {spam === 1 ? "person" : "people"}{" "}
-              in 10,000 marked you as spam.
+              {number(bounced)} bounced, and{" "}
+              {delivered < 10_000
+                ? `${number(complained)} ${complained === 1 ? "person" : "people"} marked you as spam.`
+                : `${spam} ${spam === 1 ? "person" : "people"} in 10,000 marked you as spam.`}
             </span>
           </p>
         )}
