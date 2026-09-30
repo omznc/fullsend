@@ -1,54 +1,91 @@
-<h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="logo-dark.svg">
-    <img src="logo-light.svg" alt="fullsend" height="48">
-  </picture>
-</h1>
+<div align="center">
 
-fullsend is an email API that runs completely on Cloudflare. Supports the `resend` SDK for sending, so it's a drop-in replacement (with certain limitations).
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logo-dark.svg">
+  <img src="logo-light.svg" alt="fullsend" height="56">
+</picture>
+
+**An email API that runs completely on Cloudflare.**
+
+A drop-in replacement for the `resend` SDK, with [some limits](#differences-from-resend).
+
+<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/omznc/fullsend">
+  <img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare">
+</a>
+
+[Deploy](#deploy) · [Send](#send) · [RPC](#service-binding-rpc) · [API](#api) · [Develop](#develop)
+
+</div>
+
+<br>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/overview-dark.png">
   <img src="docs/overview-light.png" alt="The fullsend dashboard overview, with example data">
 </picture>
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/omznc/fullsend)
+---
 
 ## Deploy
 
-1. Click the "Deploy to Cloudflare" button. The deploy makes the D1
-   database, the R2 bucket and the three queues.
-2. The deploy form needs no values. Keep "Protect with Cloudflare Access"
-   off. fullsend makes its own Access applications in step 4, and the API
-   paths must stay public.
-3. Open the Worker URL. Create a Cloudflare API token with the
-   [token template](https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22email_sending%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22queues%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access_acct%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&name=fullsend)
-   and paste it. The template fills in these permissions: Email Sending
-   Edit, Zone Read, Queues Edit, Access: Apps and Policies Edit, Access:
-   Organizations, Identity Providers, and Groups Read, Workers Scripts
-   Edit.
-   - The token proves that you own the deploy: its account must run this
-     Worker. fullsend saves the token and its account ID as the Worker
-     secrets `CF_API_TOKEN` and `CF_ACCOUNT_ID`.
-   - Without a token, use the setup code. The Worker writes it to its logs
-     (Workers & Pages, the Worker, Logs) on the line
-     `fullsend setup code`.
-4. Choose the dashboard login. For an account without Zero Trust, click
-   "use a password instead", set a password and go to step 6. For Access,
-   give the API hostname (for example `email.example.com`) and the owner's
-   email. fullsend attaches the hostname and makes two Cloudflare Access
-   applications:
-   - "fullsend dashboard" protects the dashboard.
-   - "fullsend API" keeps `/emails`, `/domains`, `/api-keys`, `/webhooks`,
-     `/t` and `/health` public. These paths use API keys.
-5. Sign in through Access.
-6. The setup wizard onboards a sending domain, makes its event
-   subscription, makes the first API key and sends a test email.
+1. **Click "Deploy to Cloudflare".**
+   The deploy makes the D1 database, the R2 bucket and the three queues.
 
-If you rename a queue or the Worker in the deploy form, set
-`EVENTS_QUEUE_NAME` or `WORKER_NAME` to the new name.
+2. **Fill in the deploy form.**
+   The form needs no values.
 
-### Deploy by hand
+   > [!IMPORTANT]
+   > Keep **"Protect with Cloudflare Access"** off. fullsend makes its own
+   > Access applications in step 4, and the API paths must stay public.
+
+3. **Open the Worker URL and paste an API token.**
+   Create a Cloudflare API token with the
+   [token template](https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22email_sending%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22queues%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22access_acct%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%5D&name=fullsend).
+   The template fills in these permissions:
+
+   | Permission                                          | Level |
+   | --------------------------------------------------- | ----- |
+   | Email Sending                                       | Edit  |
+   | Zone                                                | Read  |
+   | Queues                                              | Edit  |
+   | Access: Apps and Policies                           | Edit  |
+   | Access: Organizations, Identity Providers, and Groups | Read  |
+   | Workers Scripts                                     | Edit  |
+
+   The token proves that you own the deploy: its account must run this
+   Worker. fullsend saves the token and its account ID as the Worker
+   secrets `CF_API_TOKEN` and `CF_ACCOUNT_ID`.
+
+   > [!TIP]
+   > Without a token, use the setup code. The Worker writes it to its logs
+   > (**Workers & Pages → the Worker → Logs**) on the line `fullsend setup code`.
+
+4. **Choose the dashboard login.**
+   - **No Zero Trust:** click "use a password instead", set a password and
+     go to step 6.
+   - **Cloudflare Access:** give the API hostname (for example
+     `email.example.com`) and the owner's email. fullsend attaches the
+     hostname and makes two Access applications:
+
+     | Application          | What it does                                                                                 |
+     | -------------------- | -------------------------------------------------------------------------------------------- |
+     | `fullsend dashboard` | Protects the dashboard.                                                                      |
+     | `fullsend API`       | Keeps `/emails`, `/domains`, `/api-keys`, `/webhooks`, `/t` and `/health` public. These paths use API keys. |
+
+5. **Sign in through Access.**
+
+6. **Complete the setup wizard.**
+   The wizard onboards a sending domain, makes its event subscription,
+   makes the first API key and sends a test email.
+
+> [!NOTE]
+> If you rename a queue or the Worker in the deploy form, set
+> `EVENTS_QUEUE_NAME` or `WORKER_NAME` to the new name.
+
+<details>
+<summary><strong>Deploy by hand</strong></summary>
+
+<br>
 
 The `deploy` script applies the D1 migrations before it deploys. On a new
 account, make the database first:
@@ -60,16 +97,23 @@ pnpm exec wrangler d1 create fullsend
 pnpm run deploy
 ```
 
-Then continue at step 3. fullsend makes its session secret and its setup
-code in D1. To set your own values, set the `SESSION_SECRET` or
-`SETUP_TOKEN` secret with `pnpm exec wrangler secret put`.
+Then continue at step 3.
 
-### Update a deploy
+fullsend makes its session secret and its setup code in D1. To set your own
+values, set the `SESSION_SECRET` or `SETUP_TOKEN` secret with
+`pnpm exec wrangler secret put`.
+
+</details>
+
+<details>
+<summary><strong>Update a deploy</strong></summary>
+
+<br>
 
 The Deploy button makes a copy of this repo, not a fork, so GitHub cannot
-sync it. Cloudflare also writes the D1 database ID into `wrangler.jsonc`
-of the copy. Apply the new changes as a patch, then push. The push
-deploys the Worker.
+sync it. Cloudflare also writes the D1 database ID into `wrangler.jsonc` of
+the copy. Apply the new changes as a patch, then push. The push deploys the
+Worker.
 
 For the first update, set `OLD` to the commit of this repo that you
 deployed. After that, the commands read it from the last update commit.
@@ -85,6 +129,10 @@ git push
 ```
 
 "No valid patches in input" means that the copy is up to date.
+
+</details>
+
+---
 
 ## Send
 
@@ -103,7 +151,8 @@ await resend.emails.send({
 });
 ```
 
-You can also set the `RESEND_BASE_URL` environment variable.
+> [!TIP]
+> You can also set the `RESEND_BASE_URL` environment variable.
 
 With curl:
 
@@ -114,6 +163,8 @@ curl https://email.example.com/emails \
   -d '{"from":"hello@email.example.com","to":"omar@example.net","subject":"Hello","text":"Hello"}'
 ```
 
+---
+
 ## Service binding (RPC)
 
 A Worker in the same account can call fullsend with no HTTP and no API key.
@@ -122,7 +173,12 @@ Copy [`rpc.d.ts`](rpc.d.ts) into the caller.
 ```jsonc
 // wrangler.jsonc of the caller
 "services": [
-  { "binding": "FULLSEND", "service": "fullsend", "entrypoint": "FullsendRpc", "props": { "caller": "my-worker" } }
+  {
+    "binding": "FULLSEND",
+    "service": "fullsend",
+    "entrypoint": "FullsendRpc",
+    "props": { "caller": "my-worker" }
+  }
 ]
 ```
 
@@ -135,49 +191,75 @@ const { data, error } = await env.FULLSEND.sendEmail({
 });
 ```
 
-The methods are `sendEmail`, `sendBatch`, `getEmail`, `listEmails`,
-`updateEmail` and `cancelEmail`. They take the Resend request bodies (the
-API names or the SDK names) and return `{ data, error }`. fullsend stores
-each RPC email with the API key column `rpc:<caller>`.
+| Method        | Method         | Method        |
+| ------------- | -------------- | ------------- |
+| `sendEmail`   | `sendBatch`    | `getEmail`    |
+| `listEmails`  | `updateEmail`  | `cancelEmail` |
+
+The methods take the Resend request bodies (the API names or the SDK names)
+and return `{ data, error }`. fullsend stores each RPC email with the API key
+column `rpc:<caller>`.
+
+---
 
 ## API
 
-| Method | Path                                  |
-| ------ | ------------------------------------- |
-| POST   | `/emails`                             |
-| POST   | `/emails/batch`                       |
-| GET    | `/emails`, `/emails/:id`              |
-| PATCH  | `/emails/:id`                         |
-| POST   | `/emails/:id/cancel`                  |
-| POST   | `/domains`, `/domains/:id/verify`     |
-| GET    | `/domains`, `/domains/:id`            |
-| PATCH  | `/domains/:id`                        |
-| DELETE | `/domains/:id`                        |
-| POST   | `/api-keys`                           |
-| GET    | `/api-keys`                           |
-| DELETE | `/api-keys/:id`                       |
-| *      | `/webhooks`, `/webhooks/:id`          |
-| POST   | `/webhooks/:id/signing-secret/rotate` |
-
 The request bodies, the responses and the error names are the same as in
 Resend. `Idempotency-Key` and `x-batch-validation` work as in Resend.
+
+**Emails**
+
+| Method  | Path                     |
+| ------- | ------------------------ |
+| `POST`  | `/emails`                |
+| `POST`  | `/emails/batch`          |
+| `GET`   | `/emails`, `/emails/:id` |
+| `PATCH` | `/emails/:id`            |
+| `POST`  | `/emails/:id/cancel`     |
+
+**Domains**
+
+| Method   | Path                              |
+| -------- | --------------------------------- |
+| `POST`   | `/domains`, `/domains/:id/verify` |
+| `GET`    | `/domains`, `/domains/:id`        |
+| `PATCH`  | `/domains/:id`                    |
+| `DELETE` | `/domains/:id`                    |
+
+**API keys**
+
+| Method   | Path            |
+| -------- | --------------- |
+| `POST`   | `/api-keys`     |
+| `GET`    | `/api-keys`     |
+| `DELETE` | `/api-keys/:id` |
+
+**Webhooks**
+
+| Method | Path                                  |
+| ------ | ------------------------------------- |
+| `*`    | `/webhooks`, `/webhooks/:id`          |
+| `POST` | `/webhooks/:id/signing-secret/rotate` |
 
 Webhooks use the Resend body and Svix signatures. `resend.webhooks.verify()`
 and the `svix` package check them.
 
 ### Differences from Resend
 
-- The size of an email, with its attachments, is 5 MiB or less. This is
-  the Cloudflare limit.
-- Cloudflare sends only the first `reply_to` address.
-- fullsend has no templates, audiences, contacts, broadcasts or receiving.
-- Open and click tracking are on by default for a new domain.
-- Domains must be in a Cloudflare zone of the same account.
-- The rate limit per key has steps of 10 requests per second.
+| Area              | fullsend                                                           |
+| ----------------- | ------------------------------------------------------------------ |
+| Email size        | 5 MiB or less, with attachments. This is the Cloudflare limit.     |
+| `reply_to`        | Cloudflare sends only the first address.                           |
+| Missing features  | No templates, audiences, contacts, broadcasts or receiving.        |
+| Tracking          | Open and click tracking are on by default for a new domain.        |
+| Domains           | Must be in a Cloudflare zone of the same account.                  |
+| Rate limit        | The limit per key has steps of 10 requests per second.             |
+
+---
 
 ## Develop
 
-Requirements: Node 24 and pnpm.
+**Requirements:** Node 24 and pnpm.
 
 ```sh
 pnpm install
@@ -187,7 +269,7 @@ pnpm dev                         # the Worker, on port 8787
 pnpm dev:ui                      # the UI with hot reload, on port 5173
 ```
 
-Checks:
+**Checks:**
 
 ```sh
 pnpm lint:ci
@@ -198,7 +280,7 @@ pnpm test
 The tests run in the Workers runtime. One suite runs the official `resend`
 SDK against the Worker.
 
-To make an API key without the dashboard:
+**Make an API key without the dashboard:**
 
 ```sh
 cd worker
@@ -206,28 +288,32 @@ node scripts/create-key.ts "my app" > key.sql
 cf d1 execute fullsend --remote --file key.sql
 ```
 
-## Layout
+### Layout
 
 ```
-wrangler.jsonc   the Worker config and every binding
-worker/src/      the Worker
-  api/           the Resend-compatible routes
-  dashboard/     /api/* for the UI
-  send/          validation, idempotency, the send queue consumer
-  events/        Cloudflare events to email status and webhooks
-  webhooks/      webhook delivery and signing
-  tracking/      the open pixel and the click redirect
-  domains/       domains through the Cloudflare API
-  db/            the Drizzle schema
-worker/migrations/  D1 migrations
-ui/              the dashboard
-rpc.d.ts         the RPC types for callers
+wrangler.jsonc        the Worker config and every binding
+worker/
+├── src/              the Worker
+│   ├── api/          the Resend-compatible routes
+│   ├── dashboard/    /api/* for the UI
+│   ├── send/         validation, idempotency, the send queue consumer
+│   ├── events/       Cloudflare events to email status and webhooks
+│   ├── webhooks/     webhook delivery and signing
+│   ├── tracking/     the open pixel and the click redirect
+│   ├── domains/      domains through the Cloudflare API
+│   └── db/           the Drizzle schema
+└── migrations/       D1 migrations
+ui/                   the dashboard
+rpc.d.ts              the RPC types for callers
 ```
+
+---
 
 ## License
 
-AGPL-3.0-only. See [LICENSE](LICENSE).
+[AGPL-3.0-only](LICENSE).
 
 ## Thanks
 
-This was inspired by [Emailflare](https://github.com/0xdps/emailflare), but it's not a fork.
+This project got ideas from [Emailflare](https://github.com/0xdps/emailflare).
+It is not a fork.
