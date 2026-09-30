@@ -204,14 +204,25 @@ export function ApiKeys() {
         {created && (
           <div className="flex flex-col gap-3">
             <SecretReveal secret={created.token} />
-            <span className="text-[13px] text-fg2">
-              {permissionLabel(created.permission)} ·{" "}
-              {domainName(created.domain_id)} ·{" "}
-              {created.rate_limit === null
-                ? "the default rate limit."
-                : `${created.rate_limit} per second.`}
+            <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0">
+              {[
+                permissionLabel(created.permission),
+                domainName(created.domain_id),
+                created.rate_limit === null
+                  ? "default rate limit"
+                  : `${created.rate_limit} per second`,
+              ].map((t) => (
+                <li
+                  key={t}
+                  className="inline-flex h-6 items-center border border-line2 px-2 font-mono text-[12px] text-fg2"
+                >
+                  {t}
+                </li>
+              ))}
+            </ul>
+            <p className="m-0 text-[13px] text-fg2">
               fullsend stores only a hash, so a lost key must be replaced.
-            </span>
+            </p>
             <DialogFooter>
               <Button icon="check" onClick={() => setCreated(null)}>
                 I saved it

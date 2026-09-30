@@ -524,20 +524,29 @@ function TagFilter({
       <FilterChip name="tag" value={value} onClear={() => onChange(null)} />
     );
 
+  // The same plus icon as the other filters, not a typed "+".
   return (
-    <input
-      aria-label="Add tag filter, name or name:value"
-      placeholder="+ tag"
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && e.currentTarget.value.trim())
-          onChange(e.currentTarget.value.trim());
-      }}
-      onBlur={(e) => {
-        if (e.currentTarget.value.trim())
-          onChange(e.currentTarget.value.trim());
-      }}
-      className={cx(dashed, "w-24 placeholder:text-fg2")}
-    />
+    <label
+      className={cx(
+        dashed,
+        "flex w-24 cursor-text items-center gap-1.5 has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-accent-fg",
+      )}
+    >
+      <Icon name="plus" size={16} />
+      <input
+        aria-label="Add tag filter, name or name:value"
+        placeholder="tag"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && e.currentTarget.value.trim())
+            onChange(e.currentTarget.value.trim());
+        }}
+        onBlur={(e) => {
+          if (e.currentTarget.value.trim())
+            onChange(e.currentTarget.value.trim());
+        }}
+        className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[12px] text-fg outline-none placeholder:text-fg2"
+      />
+    </label>
   );
 }
 

@@ -65,7 +65,7 @@ function Section({
         </h2>
         <span className="text-[13px] text-fg2">{help}</span>
       </div>
-      <div className="py-2">{children}</div>
+      <div>{children}</div>
     </section>
   );
 }

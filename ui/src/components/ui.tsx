@@ -740,7 +740,13 @@ function placeIndicator(box: HTMLElement) {
   }
 
   bar.style.opacity = "1";
-  bar.style.transform = `translateX(${el.offsetLeft}px) scaleX(${el.offsetWidth})`;
+  // Fractional sizes, and a bar as wide as the box: with a 1 px bar and
+  // integer offsets, a browser zoom snaps the base and the scale grows the
+  // error.
+  const b = box.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const x = r.left - b.left - box.clientLeft + box.scrollLeft;
+  bar.style.transform = `translateX(${x}px) scaleX(${r.width / Number.parseFloat(getComputedStyle(bar).width)})`;
 }
 
 export function useIndicator<T extends HTMLElement>() {
@@ -785,7 +791,7 @@ export function Indicator({ fill }: { fill?: boolean }) {
       aria-hidden
       data-indicator
       className={cx(
-        "pointer-events-none absolute left-0 w-px origin-left opacity-0",
+        "pointer-events-none absolute left-0 w-full origin-left opacity-0",
         fill ? "inset-y-0 bg-raised" : "bottom-0 h-0.5 bg-accent",
       )}
     />
