@@ -572,7 +572,7 @@ function RateCard({
   const at = value === null ? 0 : Math.min(value / scale, 1) * 100;
 
   return (
-    <div className="flex flex-1 flex-col gap-2 border-t border-b border-line px-4 py-4.5 first:border-t-0 md:px-8 lg:border-t-0">
+    <div className="flex flex-1 flex-col gap-2 border-b border-line px-4 py-4.5 last:border-b-0 md:px-8">
       <div className="flex items-baseline justify-between">
         <span className="font-semibold">{label}</span>
         <span className="flex items-baseline gap-2">
