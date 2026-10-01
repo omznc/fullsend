@@ -34,9 +34,9 @@ A drop-in replacement that can use the `resend` SDK, with [some limits](#differe
 2. **Fill in the deploy form.**
    The form needs no values.
 
- > [!IMPORTANT]
- > Keep **"Protect with Cloudflare Access"** off. fullsend makes its own
- > Access applications, and the API paths must stay public.
+> [!IMPORTANT]
+> Keep **"Protect with Cloudflare Access"** off. fullsend makes its own
+> Access applications, and the API paths must stay public.
 
 3. **Open the Worker URL.**
    The setup page shows the remaining steps.
@@ -154,10 +154,10 @@ const { data, error } = await env.FULLSEND.sendEmail({
 });
 ```
 
-| Method        | Method         | Method        |
-| ------------- | -------------- | ------------- |
-| `sendEmail`   | `sendBatch`    | `getEmail`    |
-| `listEmails`  | `updateEmail`  | `cancelEmail` |
+| Method       | Method        | Method        |
+| ------------ | ------------- | ------------- |
+| `sendEmail`  | `sendBatch`   | `getEmail`    |
+| `listEmails` | `updateEmail` | `cancelEmail` |
 
 The methods take the Resend request bodies (the API names or the SDK names)
 and return `{ data, error }`. fullsend stores each RPC email with the API key
@@ -209,14 +209,14 @@ and the `svix` package check them.
 
 ### Differences from Resend
 
-| Area              | fullsend                                                           |
-| ----------------- | ------------------------------------------------------------------ |
-| Email size        | 5 MiB or less, with attachments. This is the Cloudflare limit.     |
-| `reply_to`        | Cloudflare sends only the first address.                           |
-| Missing features  | No templates, audiences, contacts, broadcasts or receiving.        |
-| Tracking          | Open and click tracking are on by default for a new domain.        |
-| Domains           | Must be in a Cloudflare zone of the same account.                  |
-| Rate limit        | The limit per key has steps of 10 requests per second.             |
+| Area             | fullsend                                                       |
+| ---------------- | -------------------------------------------------------------- |
+| Email size       | 5 MiB or less, with attachments. This is the Cloudflare limit. |
+| `reply_to`       | Cloudflare sends only the first address.                       |
+| Missing features | No templates, audiences, contacts, broadcasts or receiving.    |
+| Tracking         | Open and click tracking are on by default for a new domain.    |
+| Domains          | Must be in a Cloudflare zone of the same account.              |
+| Rate limit       | The limit per key has steps of 10 requests per second.         |
 
 ---
 
