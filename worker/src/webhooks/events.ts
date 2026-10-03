@@ -62,7 +62,7 @@ async function lastAttempts(
   const { results } = await env.DB.prepare(
     `SELECT * FROM webhook_deliveries
      WHERE webhook_id = ? AND message_id IN (SELECT value FROM json_each(?))
-     ORDER BY created_at ASC, id ASC`,
+     ORDER BY created_at ASC, attempt ASC, id ASC`,
   )
     .bind(webhookId, JSON.stringify(messageIds))
     .all<AttemptRow>();
