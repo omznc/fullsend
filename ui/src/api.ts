@@ -272,7 +272,7 @@ export type RateLevel = "good" | "warning" | "danger" | null;
 
 export interface Overview {
   period: "24h" | "7d" | "30d" | "all";
-  total_emails: number;
+  has_emails: boolean;
   // `previous` is null for "all": no period comes before it.
   stats: { type: string; value: number; previous: number | null }[];
   series: { at: string; sent: number; delivered: number; bounced: number }[];

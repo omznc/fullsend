@@ -108,7 +108,7 @@ export function Overview() {
 
   if (!data) return loading ? <OverviewSkeleton /> : null;
 
-  if (data.total_emails === 0 || !session.setup_completed) return <FirstRun />;
+  if (!data.has_emails || !session.setup_completed) return <FirstRun />;
 
   // One grid, so the right column (waffle, rates, domains) runs down the
   // page without a break. The stats and the chart share the rows next to

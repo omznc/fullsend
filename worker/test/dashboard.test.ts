@@ -209,10 +209,17 @@ describe("password mode", () => {
       "INSERT INTO email_events (id, email_id, type, created_at) VALUES (?, ?, 'sent', ?)",
     );
 
+    // "all" starts at the first email, and an event has its email.
+    const email = env.DB.prepare(
+      `INSERT INTO emails (id, api_key_id, "from", "to", subject, status, last_event, last_event_at, created_at)
+       VALUES (?1, 'k', 'a@x.com', '[]', 's', 'sent', 'sent', ?2, ?2)`,
+    );
+
     await env.DB.batch(
-      [100, 50, 2].map((ago) =>
+      [100, 50, 2].flatMap((ago) => [
+        email.bind(`ov-email-${ago}`, now - ago * day),
         insert.bind(`ov-${ago}`, `ov-email-${ago}`, now - ago * day),
-      ),
+      ]),
     );
 
     interface Overview {
@@ -236,7 +243,7 @@ describe("password mode", () => {
     const month = await get("30d");
     expect(sent(month).value).toBe(1);
 
-    // "all" starts at the first event and has no period before it.
+    // "all" starts at the first email and has no period before it.
     const all = await get("all");
     expect(all.period).toBe("all");
     expect(sent(all)).toEqual({ type: "sent", value: 3, previous: null });

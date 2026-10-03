@@ -20,6 +20,7 @@ import { parseAddressColumn } from "../send/consumer";
 import { parsePage } from "../send/manage";
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
 import { dashDomain } from "./domains";
+import { FAILURES_SQL } from "./failures-sql";
 import { cookieOpts, MIN_PASSWORD } from "./setup";
 
 export const miscRoutes = new Hono<DashVars>();
@@ -105,9 +106,9 @@ miscRoutes.get("/overview", async (c) => {
   const now = Date.now();
 
   const first = all
-    ? await c.env.DB.prepare(
-        "SELECT MIN(created_at) AS t FROM email_events WHERE bot IS NULL",
-      ).first<{ t: number | null }>()
+    ? await c.env.DB.prepare("SELECT MIN(created_at) AS t FROM emails").first<{
+        t: number | null;
+      }>()
     : null;
 
   const period = all
@@ -116,7 +117,7 @@ miscRoutes.get("/overview", async (c) => {
 
   const since = now - period.span;
 
-  const [current, previous, series, failures, domains, total, system] =
+  const [current, previous, series, failures, domains, anyEmail, system] =
     await Promise.all([
       counts(c.env, since, now),
       // "all" has no period before it.
@@ -128,10 +129,7 @@ miscRoutes.get("/overview", async (c) => {
       )
         .bind(period.bucket, since)
         .all<{ bucket: number; type: string; n: number }>(),
-      c.env.DB.prepare(
-        `SELECT id, "to", subject, status, error, last_event_at FROM emails
-       WHERE status IN ('failed','bounced','complained') ORDER BY last_event_at DESC LIMIT 10`,
-      ).all<{
+      c.env.DB.prepare(FAILURES_SQL).all<{
         id: string;
         to: string;
         subject: string;
@@ -140,8 +138,9 @@ miscRoutes.get("/overview", async (c) => {
         last_event_at: number;
       }>(),
       listDomains(c.env),
-      c.env.DB.prepare("SELECT COUNT(*) AS n FROM emails").first<{
-        n: number;
+      // Only "any email?" matters here. LIMIT 1 stops at the first row.
+      c.env.DB.prepare("SELECT 1 AS one FROM emails LIMIT 1").first<{
+        one: number;
       }>(),
       // The system events of the last 7 days, whatever the period is.
       c.env.DB.prepare(
@@ -174,7 +173,7 @@ miscRoutes.get("/overview", async (c) => {
 
   return c.json({
     period: name,
-    total_emails: total?.n ?? 0,
+    has_emails: Boolean(anyEmail),
     stats: COUNTED.map((t) => ({
       type: t,
       value: current[t],
