@@ -18,5 +18,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:ci
       - run: pnpm build
+      - run: pnpm exec wrangler deploy --dry-run --outdir "$RUNNER_TEMP/dry-run"
       - run: pnpm typecheck
       - run: pnpm test
