@@ -8,6 +8,7 @@ import {
   type List,
   qs,
 } from "../api";
+import { ReschedulePicker } from "../components/Reschedule";
 import {
   Badge,
   Button,
@@ -16,16 +17,14 @@ import {
   ConfirmDialog,
   cx,
   Dialog,
-  DialogFooter,
   EmptyState,
   ErrorState,
-  Field,
   FilterChip,
   Icon,
   Input,
   Select,
-  Notice,
   PageHeader,
+  Pager,
   RelTime,
   SkeletonBlock,
   Tabs,
@@ -33,13 +32,13 @@ import {
   TableHead,
   TableRow,
   useToast,
-  errorText,
 } from "../components/ui";
 import { plainReason, utc } from "../lib/format";
 import {
   useApi,
   useDismiss,
   useNarrow,
+  useNow,
   usePoll,
   usePresence,
   useTitle,
@@ -318,7 +317,7 @@ export function Emails() {
         <Pager
           hasPrev={hasPrev}
           hasNext={hasNext}
-          narrow={narrow}
+          full
           note={
             tab === "all" ? `newest first · ${PAGE} per page` : "soonest first"
           }
@@ -806,6 +805,8 @@ function ScheduledTable({
   onChanged: () => void;
 }) {
   const [moving, setMoving] = useState<Email | null>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const now = useNow();
   const [canceling, setCanceling] = useState<Email | null>(null);
   const toast = useToast();
 
@@ -834,7 +835,10 @@ function ScheduledTable({
             <Button
               icon="calendar"
               className="h-11 md:h-9"
-              onClick={() => setMoving(e)}
+              onClick={() => {
+                setMoving(e);
+                setMoveOpen(true);
+              }}
             >
               reschedule
             </Button>
@@ -883,16 +887,25 @@ function ScheduledTable({
         <code className="font-mono text-fg2">scheduled_at</code> wait here.
         Canceled ones move to all with the status canceled.
       </div>
-      <RescheduleDialog
-        key={moving?.id ?? "none"}
-        email={moving}
-        onClose={() => setMoving(null)}
-        onDone={() => {
-          setMoving(null);
-          toast({ tone: "success", message: "Email rescheduled." });
-          onChanged();
-        }}
-      />
+      <Dialog
+        open={moveOpen}
+        onClose={() => setMoveOpen(false)}
+        title="Reschedule this email"
+        width={340}
+      >
+        {moving && (
+          <ReschedulePicker
+            key={moving.id}
+            now={now}
+            initial={moving.scheduled_at}
+            id={moving.id}
+            onDone={() => {
+              setMoveOpen(false);
+              onChanged();
+            }}
+          />
+        )}
+      </Dialog>
       <ConfirmDialog
         open={canceling !== null}
         title="Cancel this email?"
@@ -909,80 +922,6 @@ function ScheduledTable({
         }}
       />
     </div>
-  );
-}
-
-function RescheduleDialog({
-  email,
-  onClose,
-  onDone,
-}: {
-  email: Email | null;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [value, setValue] = useState(
-    email?.scheduled_at ? email.scheduled_at.slice(0, 16) : "",
-  );
-
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = () => {
-    if (!email) return;
-    const at = new Date(`${value}:00Z`);
-
-    if (!value || Number.isNaN(at.getTime())) {
-      setError("Enter a date and a time.");
-
-      return;
-    }
-
-    setBusy(true);
-    setError(null);
-    api(`/emails/${email.id}`, {
-      method: "PATCH",
-      body: { scheduled_at: at.toISOString() },
-    }).then(
-      () => {
-        setBusy(false);
-        onDone();
-
-        return undefined;
-      },
-      (cause: unknown) => {
-        setBusy(false);
-        setError(errorText(cause));
-
-        return undefined;
-      },
-    );
-  };
-
-  return (
-    <Dialog
-      open={email !== null}
-      onClose={onClose}
-      title="Reschedule this email"
-      width={400}
-    >
-      <div className="flex flex-col gap-3.5">
-        <Field label="Send at (UTC)" hint="The time is in UTC.">
-          <Input
-            type="datetime-local"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-          />
-        </Field>
-        {error && <Notice tone="red">{error}</Notice>}
-        <DialogFooter>
-          <Button onClick={onClose}>cancel</Button>
-          <Button variant="primary" busy={busy} onClick={submit}>
-            reschedule
-          </Button>
-        </DialogFooter>
-      </div>
-    </Dialog>
   );
 }
 
@@ -1089,48 +1028,6 @@ function ListSkeleton({
           </div>
         ),
       )}
-    </div>
-  );
-}
-
-function Pager({
-  hasPrev,
-  hasNext,
-  narrow,
-  note,
-  onPrev,
-  onNext,
-}: {
-  hasPrev: boolean;
-  hasNext: boolean;
-  narrow: boolean;
-  note: string;
-  onPrev: () => void;
-  onNext: () => void;
-}) {
-  if (!hasPrev && !hasNext) return null;
-
-  return (
-    <div className="flex items-center justify-between gap-2 px-4 py-4 font-mono text-[12px] text-fg3 md:px-8 md:py-3">
-      {!narrow && <span>{note}</span>}
-      <span className={cx("flex gap-1.5", narrow && "w-full")}>
-        <Button
-          icon="chevron-left"
-          disabled={!hasPrev}
-          onClick={onPrev}
-          className={cx(narrow && "h-11 flex-1 justify-center")}
-        >
-          previous
-        </Button>
-        <Button
-          iconEnd="chevron-right"
-          disabled={!hasNext}
-          onClick={onNext}
-          className={cx(narrow && "h-11 flex-1 justify-center")}
-        >
-          next
-        </Button>
-      </span>
     </div>
   );
 }
