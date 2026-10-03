@@ -16,6 +16,7 @@ import {
 import type { Env, HookMessage, SendMessage } from "../src/env";
 import { handleEvent, handleEventsBatch } from "../src/events/consumer";
 import { parseJsonText } from "../src/lib/json";
+import { setSettings } from "../src/lib/settings";
 import { logSystemEvent } from "../src/lib/system-events";
 import { handleSendBatch } from "../src/send/consumer";
 import { createEmail } from "../src/send/create";
@@ -49,9 +50,11 @@ const queueSpy = vi.spyOn(env.SEND_QUEUE, "sendBatch").mockResolvedValue(SENT);
 
 beforeAll(async () => {
   await addDomain("send.example.com");
-  await env.DB.prepare(
-    "INSERT INTO settings (key, value) VALUES ('tracking_hostname', 't.example.com')",
-  ).run();
+
+  // Use setSettings: it clears the settings cache of the Worker. Any
+  // request to the Worker before this point fills the cache, and a raw SQL
+  // insert leaves the old value there for 30 seconds.
+  await setSettings(env, { tracking_hostname: "t.example.com" });
 });
 
 function fakeEnv(

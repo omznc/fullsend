@@ -134,3 +134,14 @@ as a comment in `.dev.vars.example`.
   settings that it inserts into D1.
 - D1 keeps its rows between the tests of one file. A test that needs a
   fresh setup deletes the `settings` rows first.
+- Change a setting in a test with `setSettings`, not with raw SQL. The
+  Worker caches the settings for 30 seconds in `getSettingsCached`. Raw SQL
+  leaves the old value in the cache. Any request to the Worker fills the
+  cache, also a request from outside the tests (see the next item).
+- A process outside the repo can probe the local test ports. A tool on the
+  machine of the developer (for example a port scanner of a desktop app)
+  sends `HEAD /` to the miniflare ports. workerd then prints "Expected
+  global Vitest state" when the probe comes outside a test. This is noise
+  and not a test failure. To prove it, run the tests in a network
+  namespace: `unshare -rn sh -c "ip link set lo up; pnpm test"`. The
+  message does not appear there.
