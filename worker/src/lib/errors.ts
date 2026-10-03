@@ -1,4 +1,5 @@
-// Errors in the Resend shape: { statusCode, name, message }.
+// Errors in the Resend shape: { statusCode, name, message }. ErrorName has
+// each name in the type of the `resend` SDK (RESEND_ERROR_CODE_KEY).
 
 export type ErrorName =
   | "invalid_idempotency_key"
@@ -12,10 +13,16 @@ export type ErrorName =
   | "concurrent_idempotent_requests"
   | "invalid_attachment"
   | "invalid_from_address"
+  | "invalid_access"
   | "invalid_parameter"
+  | "invalid_region"
   | "missing_required_field"
+  | "monthly_quota_exceeded"
+  | "daily_quota_exceeded"
   | "rate_limit_exceeded"
-  | "application_error";
+  | "security_error"
+  | "application_error"
+  | "internal_server_error";
 
 export interface ErrorBody {
   statusCode: number;
@@ -26,11 +33,19 @@ export interface ErrorBody {
 export class ApiError extends Error {
   readonly statusCode: number;
   readonly errorName: ErrorName;
+  // Extra response headers, for example `retry-after`.
+  readonly headers: Record<string, string>;
 
-  constructor(statusCode: number, name: ErrorName, message: string) {
+  constructor(
+    statusCode: number,
+    name: ErrorName,
+    message: string,
+    headers: Record<string, string> = {},
+  ) {
     super(message);
     this.statusCode = statusCode;
     this.errorName = name;
+    this.headers = headers;
   }
 
   toBody(): ErrorBody {
@@ -49,5 +64,12 @@ export const validation = (message: string) =>
   new ApiError(422, "validation_error", message);
 
 export function errorResponse(err: ApiError, headers?: HeadersInit): Response {
-  return Response.json(err.toBody(), { status: err.statusCode, headers });
+  const merged = new Headers(err.headers);
+
+  for (const [name, value] of new Headers(headers)) merged.set(name, value);
+
+  return Response.json(err.toBody(), {
+    status: err.statusCode,
+    headers: merged,
+  });
 }

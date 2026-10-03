@@ -15,7 +15,7 @@ import { dashboardApi } from "./dashboard/index";
 import type { Env, HookMessage, SendMessage } from "./env";
 import { handleEventsBatch } from "./events/consumer";
 import { ApiError, errorResponse } from "./lib/errors";
-import { isHostname } from "./lib/http";
+import { allowedMethods, isHostname, methodNotAllowed } from "./lib/http";
 import { getSettings, getSettingsCached } from "./lib/settings";
 import { errorText } from "./lib/system-events";
 import { PUBLIC_PATHS } from "./public-paths";
@@ -41,7 +41,7 @@ app.onError((err, c) => {
   return errorResponse(
     new ApiError(
       500,
-      "application_error",
+      "internal_server_error",
       "Internal server error. We are unable to process your request right now, please try again later.",
     ),
   );
@@ -76,7 +76,11 @@ app.route("/api-keys", apiKeysApi);
 app.route("/webhooks", webhooksApi);
 
 for (const prefix of PUBLIC_PATHS) {
-  app.all(`${prefix}/*`, () => {
+  app.all(`${prefix}/*`, (c) => {
+    const allowed = allowedMethods(app.routes, c.req.path);
+
+    if (allowed.length) throw methodNotAllowed(allowed);
+
     throw new ApiError(
       404,
       "not_found",

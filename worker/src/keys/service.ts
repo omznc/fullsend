@@ -100,6 +100,11 @@ export async function findKeyByToken(
   return row ?? null;
 }
 
+// The period of the RATE_LIMITER binding in wrangler.jsonc, in seconds.
+// The binding does not say when its window ends, so a refused request
+// waits one full period at most.
+const RATE_PERIOD = 10;
+
 // Checks the rate limit of a key. The binding allows 10 requests per
 // second for one bucket. A key with a higher limit spreads its requests
 // over more buckets.
@@ -116,6 +121,12 @@ export async function checkRateLimit(env: Env, key: ApiKeyRow): Promise<void> {
       429,
       "rate_limit_exceeded",
       "Too many requests. You can only make 10 requests per second. See rate limit response headers for more information.",
+      {
+        "retry-after": String(RATE_PERIOD),
+        "ratelimit-limit": String(key.rateLimit),
+        "ratelimit-remaining": "0",
+        "ratelimit-reset": String(RATE_PERIOD),
+      },
     );
   }
 }
