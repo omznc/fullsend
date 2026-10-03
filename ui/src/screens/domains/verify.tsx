@@ -1,66 +1,57 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Domain, type DomainRecord } from "../../api";
-import { errorText, Icon } from "../../components/ui";
-import { useInterval, useNow } from "../../lib/hooks";
+import { Button, errorText, Icon } from "../../components/ui";
+import { usePoll } from "../../lib/hooks";
 
-// The client checks DNS while a page is open. The Worker cron also syncs
-// each domain every 15 minutes, so a closed page does not stop the check.
+// The client checks DNS while a page is open and visible. The fast checks
+// stop after 5 minutes. The Worker cron also syncs each domain every 15
+// minutes, so a stopped page does not stop the check.
 const FAST_MS = 10_000;
-
-const SLOW_MS = 60_000;
 
 const FAST_WINDOW_MS = 5 * 60_000;
 
-interface Run {
-  startedAt: number;
-  nextAt: number;
-  attempts: number;
-}
+// "running": the fast checks go on. "stopped": the 5 minutes ended. "idle":
+// no check runs, or the domain is verified or failed.
+type Phase = "idle" | "running" | "stopped";
 
 export interface VerifyPoll {
   // True while a check runs.
   busy: boolean;
-  // True from the first check until the domain is verified.
+  // True while the fast checks run.
   active: boolean;
+  // True when the fast checks ended and the domain is not final.
+  stopped: boolean;
   attempts: number;
-  // The time of the next check, in ms since the epoch.
-  nextAt: number | null;
   error: string | null;
+  // Starts a new run of fast checks, with one check at once.
   start: () => void;
 }
 
-// Calls POST /domains/:id/verify each 10 s for 5 minutes, then each 60 s.
-// The polling stops when the domain is verified or the page closes.
-// With `autoStart`, the first check runs at once.
+// Calls POST /domains/:id/verify each 10 s for 5 minutes while the tab is
+// visible. It stops when the domain is verified or failed, when the 5
+// minutes end, or when the page closes. With `autoStart`, the first check
+// runs at once.
 export function useVerifyPoll(
   id: string,
   onDomain: (d: Domain) => void,
   autoStart = false,
 ): VerifyPoll {
-  const [run, setRun] = useState<Run | null>(() =>
-    autoStart
-      ? { startedAt: Date.now(), nextAt: Date.now(), attempts: 0 }
-      : null,
-  );
-
+  const [phase, setPhase] = useState<Phase>(autoStart ? "running" : "idle");
+  const [attempts, setAttempts] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inflight = useRef(false);
-  const runRef = useRef<Run | null>(run);
-  useEffect(() => {
-    runRef.current = run;
-  });
+  const startedAt = useRef(0);
 
   const check = useCallback(
-    (fresh?: boolean) => {
-      const base = fresh
-        ? { startedAt: Date.now(), nextAt: 0, attempts: 0 }
-        : runRef.current;
-
-      if (inflight.current || !base) return;
+    (fresh: boolean): Promise<void> => {
+      if (inflight.current) return Promise.resolve();
       inflight.current = true;
+
+      if (fresh || startedAt.current === 0) startedAt.current = Date.now();
       setBusy(true);
-      api<Domain>(`/domains/${encodeURIComponent(id)}/verify`, {
+
+      return api<Domain>(`/domains/${encodeURIComponent(id)}/verify`, {
         method: "POST",
       })
         .then(
@@ -68,7 +59,7 @@ export function useVerifyPoll(
             setError(null);
             onDomain(d);
 
-            return d.status === "verified";
+            return d.status === "verified" || d.status === "failed";
           },
           (cause: unknown) => {
             setError(errorText(cause));
@@ -76,21 +67,15 @@ export function useVerifyPoll(
             return false;
           },
         )
-        .then((done) => {
+        .then((final) => {
           inflight.current = false;
           setBusy(false);
-          const now = Date.now();
-          setRun(
-            done
-              ? null
-              : {
-                  startedAt: base.startedAt,
-                  attempts: base.attempts + 1,
-                  nextAt:
-                    now +
-                    (now - base.startedAt < FAST_WINDOW_MS ? FAST_MS : SLOW_MS),
-                },
-          );
+          setAttempts((n) => (fresh ? 0 : n) + 1);
+
+          if (final) setPhase("idle");
+          else if (Date.now() - startedAt.current >= FAST_WINDOW_MS)
+            setPhase("stopped");
+          else setPhase("running");
 
           return undefined;
         });
@@ -98,19 +83,22 @@ export function useVerifyPoll(
     [id, onDomain],
   );
 
-  useInterval(() => {
-    const r = runRef.current;
+  const first = useRef(autoStart);
+  useEffect(() => {
+    if (!first.current) return;
+    first.current = false;
+    void check(true);
+  }, [check]);
 
-    if (r && Date.now() >= r.nextAt) check();
-  }, 1000);
+  usePoll(() => check(false), phase === "running" ? FAST_MS : null);
 
   return {
     busy,
-    active: run !== null || busy,
-    attempts: run?.attempts ?? 0,
-    nextAt: run?.nextAt ?? null,
+    active: phase === "running",
+    stopped: phase === "stopped",
+    attempts,
     error,
-    start: () => check(true),
+    start: () => void check(true),
   };
 }
 
@@ -128,7 +116,9 @@ export function recordIcon(status: string): RecordIcon {
   return { name: "clock", color: "text-amber" };
 }
 
-// The state of the DNS check: records found, countdown, attempt count.
+// The state of the DNS check: records found, check rate, attempt count.
+// After the fast checks stop, it tells that the cron checks each 15 minutes
+// and offers a check now.
 export function VerifyBanner({
   records,
   poll,
@@ -136,12 +126,7 @@ export function VerifyBanner({
   records: DomainRecord[];
   poll: VerifyPoll;
 }) {
-  const now = useNow(1000);
   const found = records.filter((r) => r.status === "verified").length;
-
-  const left = poll.nextAt
-    ? Math.max(0, Math.ceil((poll.nextAt - now) / 1000))
-    : null;
 
   return (
     <div
@@ -149,16 +134,36 @@ export function VerifyBanner({
       className="flex flex-wrap items-center gap-x-2 gap-y-1 border border-line2 px-3 py-2.5"
     >
       <Icon
-        name="loader"
-        className={poll.busy ? "animate-spin text-accent-fg" : "text-accent-fg"}
+        name={poll.stopped && !poll.busy ? "clock" : "loader"}
+        className={
+          poll.busy
+            ? "animate-spin text-accent-fg"
+            : poll.stopped
+              ? "text-fg3"
+              : "text-accent-fg"
+        }
       />
       <span className="flex-1">
         {found} of {records.length} records found
       </span>
       <span className="font-mono text-[12px] text-fg3">
-        {poll.busy ? "checking" : left !== null ? `next check ${left} s` : ""}
+        {poll.busy
+          ? "checking"
+          : poll.stopped
+            ? "stopped"
+            : "checks every 10 s"}
         {poll.attempts > 0 && ` · attempt ${poll.attempts}`}
       </span>
+      {poll.stopped && (
+        <>
+          <span className="basis-full text-[12.5px] text-fg2">
+            The fast checks stopped. fullsend checks again every 15 minutes.
+          </span>
+          <Button icon="reload" busy={poll.busy} onClick={poll.start}>
+            check now
+          </Button>
+        </>
+      )}
       {poll.error && (
         <span className="basis-full text-[12.5px] text-red">{poll.error}</span>
       )}

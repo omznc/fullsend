@@ -22,7 +22,7 @@ import {
   useToast,
 } from "../../components/ui";
 import { clock, plainReason } from "../../lib/format";
-import { useApi, useInterval, useNow } from "../../lib/hooks";
+import { useApi, useNow, usePoll } from "../../lib/hooks";
 import { pick } from "../../lib/json";
 import { Link, navigate } from "../../lib/router";
 import { apiBase, useSession } from "../../session";
@@ -481,8 +481,8 @@ export function StepTest({ flow }: { flow: Flow }) {
   );
 }
 
-// The live timeline of one test email. It polls every 2 s until the
-// email ends, or 60 s pass.
+// The live timeline of one test email. It polls every 2 s while the tab is
+// visible, until the email ends or 30 polls pass.
 function Live({
   id,
   at,
@@ -499,7 +499,7 @@ function Live({
   const email = mail.data;
   const end = email?.events.find((e) => DONE.has(e.type));
   const finished = Boolean(end) || (email ? DONE.has(email.status) : false);
-  useInterval(() => void mail.reload(), finished ? null : 2000);
+  const poll = usePoll(mail.reload, finished ? null : 2000, 30);
 
   const delivered = email?.events.some((e) => e.type === "delivered") ?? false;
   useEffect(() => {
@@ -547,9 +547,11 @@ function Live({
     rows.push({
       time: "waiting",
       type: "delivered",
-      note: slow
-        ? "Still waiting. Check delivery events in step 4."
-        : "Waiting for the delivery event. Usually under 10 s.",
+      note: poll.stopped
+        ? "Stopped. The email has no delivery event yet."
+        : slow
+          ? "Still waiting. Check delivery events in step 4."
+          : "Waiting for the delivery event. Usually under 10 s.",
       state: "wait",
       tone: "gray",
     });
@@ -605,11 +607,24 @@ function Live({
           ))}
         </Rows>
       </div>
-      {bad && (
-        <div>
-          <Button icon="reload" onClick={onRetry}>
-            try another address
-          </Button>
+      {(bad || (poll.stopped && !finished)) && (
+        <div className="flex flex-wrap gap-2">
+          {poll.stopped && !finished && (
+            <Button
+              icon="reload"
+              onClick={() => {
+                poll.restart();
+                void mail.reload();
+              }}
+            >
+              try again
+            </Button>
+          )}
+          {bad && (
+            <Button icon="reload" onClick={onRetry}>
+              try another address
+            </Button>
+          )}
         </div>
       )}
     </div>

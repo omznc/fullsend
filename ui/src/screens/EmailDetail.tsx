@@ -56,7 +56,14 @@ export function EmailDetail({ id }: { id: string }) {
 
   // Polls for new events: fast while the email is on its way, slower
   // after, for opens and clicks. A failed poll keeps the data on screen.
+  // The poll stops when the email is in a final state and is older than
+  // one day.
   const status = res.data?.status;
+  const now = useNow();
+
+  const created = res.data ? Date.parse(res.data.created_at) : 0;
+  const settled = status !== undefined && !IN_FLIGHT.has(status);
+  const old = settled && now - created > DAY_MS;
 
   usePoll(
     async () => {
@@ -66,7 +73,7 @@ export function EmailDetail({ id }: { id: string }) {
 
       if (next) res.setData(next);
     },
-    status ? (IN_FLIGHT.has(status) ? 3_000 : 10_000) : null,
+    status && !old ? (IN_FLIGHT.has(status) ? 3_000 : 10_000) : null,
   );
 
   if (res.error) {
@@ -102,6 +109,8 @@ export function EmailDetail({ id }: { id: string }) {
 }
 
 // Types and helpers
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const IN_FLIGHT = new Set<EmailStatus>([
   "queued",

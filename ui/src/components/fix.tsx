@@ -6,7 +6,7 @@ import {
   type CloudflareStatus,
   type PermKey,
 } from "../api";
-import { useInterval } from "../lib/hooks";
+import { usePoll } from "../lib/hooks";
 import {
   Button,
   Dialog,
@@ -194,11 +194,11 @@ export function HowToFix({
     }
   };
 
-  useInterval(
-    () => {
-      if (!busy) void run();
-    },
+  // The dialog checks 24 times (2 minutes), then it waits for a click.
+  const poll = usePoll(
+    () => (busy ? Promise.resolve() : run()),
     open ? EVERY_MS : null,
+    24,
   );
 
   return (
@@ -208,6 +208,7 @@ export function HowToFix({
         onClick={() => {
           setCheckedAt(null);
           setError(null);
+          poll.restart();
           setOpen(true);
         }}
         className={`flex w-fit items-center border-0 bg-transparent p-0 font-mono text-[12.5px] text-fg underline underline-offset-3 hover:text-accent-fg ${className ?? ""}`}
@@ -230,16 +231,21 @@ export function HowToFix({
               >
                 {busy
                   ? "checking"
-                  : checkedAt
-                    ? `not fixed yet · checked ${new Date(checkedAt).toLocaleTimeString()}`
-                    : `checks again every ${EVERY_MS / 1000} seconds`}
+                  : poll.stopped
+                    ? "stopped · press check again to try once more"
+                    : checkedAt
+                      ? `not fixed yet · checked ${new Date(checkedAt).toLocaleTimeString()}`
+                      : `checks again every ${EVERY_MS / 1000} seconds`}
               </span>
               <Button onClick={() => setOpen(false)}>close</Button>
               <Button
                 variant="primary"
                 icon="reload"
                 busy={busy}
-                onClick={() => void run()}
+                onClick={() => {
+                  poll.restart();
+                  void run();
+                }}
               >
                 check again
               </Button>

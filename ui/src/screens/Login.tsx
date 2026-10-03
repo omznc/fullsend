@@ -13,7 +13,7 @@ import {
   TextLink,
   errorText,
 } from "../components/ui";
-import { useApi, useInterval, useNow, useTitle } from "../lib/hooks";
+import { useApi, useNow, usePoll, useTitle } from "../lib/hooks";
 import {
   isBoolean,
   isJsonObject,
@@ -167,14 +167,15 @@ function Locked({
   const [saved, setSaved] = useState(false);
   const [code, setCode] = useState(false);
 
-  // After the save, wait for the Worker version that has the secrets.
-  useInterval(
-    () => {
+  // After the save, wait for the Worker version that has the secrets. The
+  // poll stops after 90 tries, or when the tab is hidden.
+  const poll = usePoll(
+    () =>
       api<{ token_set: boolean }>("/setup/token")
         .then((r) => (r.token_set ? reload() : undefined))
-        .catch(() => undefined);
-    },
+        .catch(() => undefined),
     saved ? 2000 : null,
+    90,
   );
 
   if (code)
@@ -189,7 +190,26 @@ function Locked({
         token proves that you own this deploy. fullsend also uses it to set up
         domains and Access.
       </Heading>
-      <TokenSteps onSaved={() => setSaved(true)} />
+      <TokenSteps
+        onSaved={() => {
+          setSaved(true);
+          poll.restart();
+        }}
+      />
+      {poll.stopped && (
+        <Notice tone="amber" title="The Worker did not update yet">
+          fullsend stopped the check. Try again, or reload this page.
+          <Button
+            icon="reload"
+            className="mt-2"
+            onClick={() => {
+              poll.restart();
+            }}
+          >
+            try again
+          </Button>
+        </Notice>
+      )}
       <SmallLink onClick={() => setCode(true)}>
         {session.setup_token_set
           ? "Use the setup token instead"

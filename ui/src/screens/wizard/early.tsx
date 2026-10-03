@@ -21,7 +21,7 @@ import {
   SkeletonBlock,
   errorText,
 } from "../../components/ui";
-import { useApi, useInterval, useNow } from "../../lib/hooks";
+import { useApi, useNow, usePoll } from "../../lib/hooks";
 import { Hint, type Flow, Mono, NeedDomain, Rows, StepFrame } from "./parts";
 
 // Steps 1 to 4: the token, the domain, the DNS records, the events.
@@ -34,14 +34,15 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
   // A pasted token reaches the Worker some seconds after the save.
   const [saved, setSaved] = useState(false);
 
-  useInterval(
-    () => {
-      if (!busy) void cf.reload();
-    },
+  // The poll stops after 40 tries, or when the tab is hidden.
+  const poll = usePoll(
+    () => (busy ? Promise.resolve() : cf.reload()),
     saved && !cf.data?.token_set ? 3000 : null,
+    40,
   );
 
   const recheck = async () => {
+    poll.restart();
     setBusy(true);
 
     try {
@@ -103,7 +104,17 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
             fullsend cannot reach Cloudflare without a token. You can still add
             domains by hand.
           </Notice>
-          <TokenSteps onSaved={() => setSaved(true)} />
+          <TokenSteps
+            onSaved={() => {
+              setSaved(true);
+              poll.restart();
+            }}
+          />
+          {poll.stopped && (
+            <Notice tone="amber" title="The Worker did not update yet">
+              fullsend stopped the check. Press "check again" to try once more.
+            </Notice>
+          )}
         </>
       ) : !d.valid ? (
         <>

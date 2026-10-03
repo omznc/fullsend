@@ -131,9 +131,7 @@ function Loaded({
           <span className="flex flex-wrap items-center gap-1 font-mono text-[12px] text-fg2">
             <Icon name="clock" className="text-fg3" />
             last checked <RelTime at={domain.checked_at} />
-            {poll.active && (
-              <span> · checking every 10 s for 5 minutes, then every 60 s</span>
-            )}
+            {poll.active && <span> · checking every 10 s for 5 minutes</span>}
           </span>
         }
         actions={
@@ -150,12 +148,12 @@ function Loaded({
         }
       />
 
-      {canVerify && poll.active && (
+      {canVerify && (poll.active || poll.stopped) && (
         <div className="px-4 pb-4 md:px-8">
           <VerifyBanner records={domain.records} poll={poll} />
         </div>
       )}
-      {!poll.active && poll.error && (
+      {!poll.active && !poll.stopped && poll.error && (
         <div className="px-4 pb-4 md:px-8">
           <Notice tone="red">{poll.error}</Notice>
         </div>

@@ -136,23 +136,45 @@ export function useInterval(fn: () => void, ms: number | null) {
   }, [ms]);
 }
 
+export interface PollState {
+  // True after `max` calls. The poll makes no more calls until restart.
+  stopped: boolean;
+  // Clears the stop. The count starts again when the poll starts again.
+  restart: () => void;
+}
+
 // Calls fn at an interval while the tab is visible, and one time when the
 // tab becomes visible again. A new call waits until the last one ends.
-export function usePoll(fn: () => Promise<void>, ms: number | null) {
+// With `max`, the poll stops after that many calls, and a hidden tab does
+// not use a call.
+export function usePoll(
+  fn: () => Promise<void>,
+  ms: number | null,
+  max?: number,
+): PollState {
   const ref = useRef(fn);
   useEffect(() => {
     ref.current = fn;
   });
+  const [stopped, setStopped] = useState(false);
+  const off = ms === null || stopped;
   useEffect(() => {
-    if (ms === null) return;
+    if (off) return;
     let busy = false;
+    let count = 0;
 
     const tick = () => {
       if (busy || document.hidden) return;
       busy = true;
-      void ref.current().finally(() => {
-        busy = false;
-      });
+      void ref
+        .current()
+        .catch(() => undefined)
+        .finally(() => {
+          busy = false;
+          count += 1;
+
+          if (max !== undefined && count >= max) setStopped(true);
+        });
     };
 
     const t = setInterval(tick, ms);
@@ -162,7 +184,11 @@ export function usePoll(fn: () => Promise<void>, ms: number | null) {
       clearInterval(t);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [ms]);
+  }, [off, ms, max]);
+
+  const restart = useCallback(() => setStopped(false), []);
+
+  return { stopped, restart };
 }
 
 // True when the viewport is narrower than the breakpoint.
