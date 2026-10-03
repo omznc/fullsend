@@ -87,6 +87,7 @@ export async function recordEvent(
   env: Env,
   emailId: string,
   ev: NewEvent,
+  hooks?: Hook[],
 ): Promise<string | null> {
   const at = ev.at ?? Date.now();
 
@@ -134,7 +135,7 @@ export async function recordEvent(
     .bind(emailId, at, ev.error ?? null, ev.type)
     .run();
 
-  await fanout(env, ev.type, [id]);
+  await fanout(env, ev.type, [id], hooks);
 
   if (ev.cfEventId) {
     await env.DB.prepare("UPDATE email_events SET done = 1 WHERE id = ?")
@@ -148,27 +149,42 @@ export async function recordEvent(
 // The `events` column of a webhook.
 const eventList = z.array(z.string());
 
+// An enabled webhook and the events that it wants.
+export interface Hook {
+  id: string;
+  events: string[];
+}
+
+export async function loadHooks(env: Env): Promise<Hook[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT id, events FROM webhooks WHERE status = 'enabled'",
+  ).all<{ id: string; events: string }>();
+
+  return results.map((r) => ({
+    id: r.id,
+    events: eventList.parse(parseJsonText(r.events)),
+  }));
+}
+
 // Puts one message on the hooks queue for each webhook that wants the
-// event.
+// event. A caller that handles many events can pass the hooks that it
+// loaded one time.
 export async function fanout(
   env: Env,
   type: EmailStatus,
   eventIds: string[],
+  loaded?: Hook[],
 ): Promise<void> {
   const name = WEBHOOK_EVENT[type];
 
   if (!name || !eventIds.length) return;
 
-  const { results } = await env.DB.prepare(
-    "SELECT id, events FROM webhooks WHERE status = 'enabled'",
-  ).all<{ id: string; events: string }>();
+  const hooks = loaded ?? (await loadHooks(env));
 
   const messages: MessageSendRequest<HookMessage>[] = [];
 
-  for (const hook of results) {
-    const wanted = eventList.parse(parseJsonText(hook.events));
-
-    if (!wanted.includes(name)) continue;
+  for (const hook of hooks) {
+    if (!hook.events.includes(name)) continue;
 
     for (const eventId of eventIds) {
       messages.push({

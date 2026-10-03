@@ -2,6 +2,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import type { Env } from "./env";
 import { ApiError, type ErrorBody } from "./lib/errors";
 import { isJsonObject, type JsonObject, type JsonValue } from "./lib/json";
+import { errorText } from "./lib/system-events";
 import { createBatch, createEmail } from "./send/create";
 import { withIdempotency } from "./send/idempotency";
 import {
@@ -55,7 +56,7 @@ async function wrap<T>(fn: () => Promise<T>): Promise<Result<T>> {
     return { data: await fn(), error: null };
   } catch (err) {
     if (err instanceof ApiError) return { data: null, error: err.toBody() };
-    console.error("rpc error", err);
+    console.error(JSON.stringify({ evt: "rpc.error", error: errorText(err) }));
 
     return {
       data: null,

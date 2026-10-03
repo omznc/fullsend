@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../env";
 import { recordEvent } from "../events/record";
 import { sessionSecret } from "../lib/secrets";
+import { errorText } from "../lib/system-events";
 import { parseAddressColumn } from "../send/consumer";
 import { botReason } from "./bots";
 import { checkLink } from "./sign";
@@ -69,7 +70,15 @@ trackingRoutes.on(["GET", "HEAD"], "/o/:id", async (c) => {
           ip: c.req.header("CF-Connecting-IP") ?? null,
         },
       });
-    })().catch((err) => console.error("open tracking", err)),
+    })().catch((err) =>
+      console.error(
+        JSON.stringify({
+          evt: "tracking.open_failed",
+          emailId: id,
+          error: errorText(err),
+        }),
+      ),
+    ),
   );
 
   return new Response(PIXEL, {
@@ -124,7 +133,15 @@ trackingRoutes.on(["GET", "HEAD"], "/c/:id", async (c) => {
           ip: c.req.header("CF-Connecting-IP") ?? null,
         },
       });
-    })().catch((err) => console.error("click tracking", err)),
+    })().catch((err) =>
+      console.error(
+        JSON.stringify({
+          evt: "tracking.click_failed",
+          emailId: id,
+          error: errorText(err),
+        }),
+      ),
+    ),
   );
 
   return c.redirect(url, 302);

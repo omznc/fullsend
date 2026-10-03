@@ -17,6 +17,7 @@ import {
   type JsonValue,
 } from "../lib/json";
 import { getSettings } from "../lib/settings";
+import { errorText } from "../lib/system-events";
 import { iso } from "../lib/time";
 
 export type DomainRow = typeof domains.$inferSelect;
@@ -289,7 +290,13 @@ export async function syncDomain(
     try {
       dns = await cf.fixDns(row.cfZoneId, row.cfSubdomainTag);
     } catch (err) {
-      console.warn("dns fix failed", row.name, err);
+      console.warn(
+        JSON.stringify({
+          evt: "domains.dns_fix_failed",
+          domain: row.name,
+          error: errorText(err),
+        }),
+      );
     }
   }
 
@@ -395,15 +402,27 @@ export async function deleteDomain(env: Env, id: string): Promise<void> {
     const cf = new Cloudflare(env);
 
     if (row.eventSubscriptionId) {
-      await cf
-        .deleteEventSubscription(row.eventSubscriptionId)
-        .catch((err) => console.warn("subscription delete", err));
+      await cf.deleteEventSubscription(row.eventSubscriptionId).catch((err) =>
+        console.warn(
+          JSON.stringify({
+            evt: "domains.subscription_delete_failed",
+            error: errorText(err),
+          }),
+        ),
+      );
     }
 
     if (row.source === "api" && row.cfZoneId && row.cfSubdomainTag) {
       await cf
         .deleteSendingDomain(row.cfZoneId, row.cfSubdomainTag)
-        .catch((err) => console.warn("offboard", err));
+        .catch((err) =>
+          console.warn(
+            JSON.stringify({
+              evt: "domains.offboard_failed",
+              error: errorText(err),
+            }),
+          ),
+        );
     }
   }
 

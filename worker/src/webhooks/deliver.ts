@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Env, HookMessage } from "../env";
 import { parseJsonText } from "../lib/json";
+import { errorText, logSystemEvent } from "../lib/system-events";
 import { buildEventBody } from "./payload";
 import { sign } from "./sign";
 
@@ -8,6 +9,11 @@ import { sign } from "./sign";
 const RETRY_DELAYS = [5, 300, 1800, 7200, 18000, 36000, 36000];
 
 const TIMEOUT_MS = 15_000;
+
+// The max_retries value of the fullsend-hooks queue in wrangler.jsonc.
+// This value must match it. At this attempt the consumer stores the
+// message in system_events and acks it, so the queue does not drop it.
+const MAX_RETRIES = 8;
 
 // The body of a test event (testBody in payload.ts). Only `type` is read.
 const testEvent = z.object({ type: z.string() });
@@ -25,8 +31,30 @@ export async function handleHooksBatch(
         if (retry && delay !== undefined) msg.retry({ delaySeconds: delay });
         else msg.ack();
       } catch (err) {
-        console.error("hooks consumer error", err);
-        msg.retry({ delaySeconds: 60 });
+        console.error(
+          JSON.stringify({
+            evt: "hooks.error",
+            webhookId: msg.body.webhookId,
+            attempts: msg.attempts,
+            error: errorText(err),
+          }),
+        );
+
+        if (msg.attempts < MAX_RETRIES) return msg.retry({ delaySeconds: 60 });
+
+        // The last retry is used. Keep the message for the owner and ack.
+        await logSystemEvent(env, {
+          level: "error",
+          source: "hooks",
+          message: "A webhook message failed after the last retry.",
+          detail: {
+            webhookId: msg.body.webhookId,
+            error: errorText(err),
+            attempts: msg.attempts,
+          },
+          payload: { ...msg.body },
+        });
+        msg.ack();
       }
     }),
   );
@@ -114,5 +142,22 @@ export async function deliver(
     )
     .run();
 
-  return statusCode === null || statusCode < 200 || statusCode >= 300;
+  const failed = statusCode === null || statusCode < 200 || statusCode >= 300;
+
+  // No delay is left, so the queue does not try this delivery again.
+  if (failed && RETRY_DELAYS[attempt - 1] === undefined) {
+    await logSystemEvent(env, {
+      level: "warn",
+      source: "hooks",
+      message: "A webhook delivery failed after the last retry.",
+      detail: {
+        webhookId: hook.id,
+        eventType: type,
+        attempts: attempt,
+        statusCode,
+      },
+    });
+  }
+
+  return failed;
 }

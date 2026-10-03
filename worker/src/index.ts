@@ -17,6 +17,7 @@ import { handleEventsBatch } from "./events/consumer";
 import { ApiError, errorResponse } from "./lib/errors";
 import { isHostname } from "./lib/http";
 import { getSettings, getSettingsCached } from "./lib/settings";
+import { errorText } from "./lib/system-events";
 import { handleSendBatch } from "./send/consumer";
 import { trackingRoutes } from "./tracking/routes";
 import { handleHooksBatch } from "./webhooks/deliver";
@@ -27,7 +28,14 @@ const app = new Hono<DashVars>();
 
 app.onError((err, c) => {
   if (err instanceof ApiError) return errorResponse(err);
-  console.error("unhandled error", c.req.method, c.req.path, err);
+  console.error(
+    JSON.stringify({
+      evt: "unhandled_error",
+      method: c.req.method,
+      path: c.req.path,
+      error: errorText(err),
+    }),
+  );
 
   return errorResponse(
     new ApiError(

@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { EmailStatus } from "../db/schema";
 import type { Env } from "../env";
 import { normalize } from "../lib/address";
-import { recordEvent } from "./record";
+import { errorText, logSystemEvent } from "../lib/system-events";
+import { type Hook, loadHooks, recordEvent } from "./record";
 
 // An Email Sending event from the Queues event subscription. The schema
 // checks only the fields that fullsend reads. `catchall` keeps the other
@@ -51,32 +52,100 @@ const STATUS = new Map<string, EmailStatus>([
 // The consumer tries again this many times, then drops the event.
 const MAX_WAIT_ATTEMPTS = 8;
 
+// The max_retries value of the fullsend-events queue in wrangler.jsonc.
+// This value must match it. At this attempt the consumer stores the event
+// in system_events and acks it, so the queue does not drop it.
+const MAX_RETRIES = 10;
+
+// The part of a message that the batch needs before the handler runs.
+interface Parsed {
+  msg: Message<unknown>;
+  event: CfEmailEvent | null;
+}
+
+// Handles the batch. The events of one email run in order. The groups of
+// different emails run at the same time. The batch reads the webhooks one
+// time.
 export async function handleEventsBatch(
   batch: MessageBatch<unknown>,
   env: Env,
 ): Promise<void> {
+  const groups = new Map<string, Parsed[]>();
+
   for (const msg of batch.messages) {
-    try {
-      const event = cfEmailEvent.safeParse(msg.body);
+    const parsed = cfEmailEvent.safeParse(msg.body);
 
-      if (!event.success) {
-        console.warn("unknown event", msg.body);
-        msg.ack();
-        continue;
-      }
+    // A message that does not parse has no email key. It gets its own group.
+    const key = parsed.success ? parsed.data.payload.messageId : msg.id;
+    const list = groups.get(key) ?? [];
 
-      const done = await handleEvent(env, event.data);
+    list.push({ msg, event: parsed.success ? parsed.data : null });
+    groups.set(key, list);
+  }
 
-      if (done || msg.attempts >= MAX_WAIT_ATTEMPTS) {
-        if (!done) console.warn("event for unknown message dropped", msg.body);
-        msg.ack();
-      } else {
-        msg.retry({ delaySeconds: Math.min(300, 5 * 2 ** msg.attempts) });
-      }
-    } catch (err) {
-      console.error("events consumer error", err);
-      msg.retry({ delaySeconds: 30 });
+  // A failed load is not an error here: each event then reads the
+  // webhooks by itself.
+  const hooks = await loadHooks(env).catch(() => undefined);
+
+  await Promise.all(
+    [...groups.values()].map(async (group) => {
+      for (const item of group) await handleMessage(env, item, hooks);
+    }),
+  );
+}
+
+async function handleMessage(
+  env: Env,
+  { msg, event }: Parsed,
+  hooks: Hook[] | undefined,
+): Promise<void> {
+  try {
+    if (!event) {
+      console.warn(JSON.stringify({ evt: "events.unparsable", id: msg.id }));
+
+      return msg.ack();
     }
+
+    const done = await handleEvent(env, event, hooks);
+
+    if (done) return msg.ack();
+
+    if (msg.attempts < MAX_WAIT_ATTEMPTS) {
+      return msg.retry({ delaySeconds: Math.min(300, 5 * 2 ** msg.attempts) });
+    }
+
+    // The detail has the Cloudflare message id and the event type only.
+    // The event has the recipient address.
+    await logSystemEvent(env, {
+      level: "warn",
+      source: "events",
+      message: "An event for an unknown message was dropped.",
+      detail: { cfMessageId: event.payload.messageId, type: event.type },
+    });
+    msg.ack();
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        evt: "events.error",
+        id: msg.id,
+        attempts: msg.attempts,
+        error: errorText(err),
+      }),
+    );
+
+    if (msg.attempts < MAX_RETRIES) return msg.retry({ delaySeconds: 30 });
+
+    // The last retry is used. Keep the payload for the owner and ack.
+    const body = z.json().safeParse(msg.body);
+
+    await logSystemEvent(env, {
+      level: "error",
+      source: "events",
+      message: "An event failed after the last retry and was dropped.",
+      detail: { error: errorText(err), attempts: msg.attempts },
+      payload: body.success ? body.data : null,
+    });
+    msg.ack();
   }
 }
 
@@ -84,12 +153,15 @@ export async function handleEventsBatch(
 export async function handleEvent(
   env: Env,
   event: CfEmailEvent,
+  hooks?: Hook[],
 ): Promise<boolean> {
   const kind = event.type.replace(/^cf\.email\.sending\.message\./, "");
   const type = kind ? STATUS.get(kind) : undefined;
 
   if (!type || !event.payload.messageId) {
-    console.warn("unknown event", event.type);
+    console.warn(
+      JSON.stringify({ evt: "events.unknown_type", type: event.type }),
+    );
 
     return true;
   }
@@ -115,19 +187,24 @@ export async function handleEvent(
 
   const error = type === "bounced" || type === "failed" ? reason : null;
 
-  await recordEvent(env, email.id, {
-    type,
-    recipient: p.recipient ?? null,
-    at: Number.isNaN(at) ? Date.now() : at,
-    cfEventId: p.eventId ?? `${p.messageId}:${kind}:${p.recipient ?? ""}`,
-    data: {
-      cf_type: kind,
-      delivery: p.delivery ?? null,
-      bounce: p.bounce ?? null,
-      complaint: p.complaint ?? null,
+  await recordEvent(
+    env,
+    email.id,
+    {
+      type,
+      recipient: p.recipient ?? null,
+      at: Number.isNaN(at) ? Date.now() : at,
+      cfEventId: p.eventId ?? `${p.messageId}:${kind}:${p.recipient ?? ""}`,
+      data: {
+        cf_type: kind,
+        delivery: p.delivery ?? null,
+        bounce: p.bounce ?? null,
+        complaint: p.complaint ?? null,
+      },
+      error,
     },
-    error,
-  });
+    hooks,
+  );
 
   // A hard bounce or a complaint adds the address to the suppression list.
   // The insert does nothing for an address that is on the list, so a
