@@ -393,6 +393,18 @@ pnpm test
 The tests run in the Workers runtime. One suite runs the official `resend`
 SDK against the Worker.
 
+**Browser smoke test:**
+
+```sh
+pnpm --filter @fullsend/ui exec playwright install chromium   # one time
+pnpm test:e2e
+```
+
+The test builds the UI and starts the Worker on port 8799 with
+`AUTH_MODE=dev`, an empty local D1 database and no Cloudflare token. It
+opens the main screens, adds a webhook and reads the version in the
+settings. `pnpm test` does not run it. The `e2e` job in CI runs it.
+
 **Make an API key without the dashboard:**
 
 ```sh

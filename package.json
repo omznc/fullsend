@@ -12,6 +12,7 @@
     "dev:ui": "pnpm --filter @fullsend/ui dev",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @fullsend/ui test:e2e",
     "lint": "oxlint --fix && oxfmt",
     "lint:ci": "oxlint && oxfmt --check",
     "format": "oxfmt"

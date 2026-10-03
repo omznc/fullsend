@@ -4,3 +4,6 @@ dist
 .dev.vars
 *.log
 worker/.dev.vars
+test-results
+playwright-report
+.e2e-state
