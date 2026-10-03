@@ -1,0 +1,84 @@
+# Changelog
+
+Each section lists the changes of one release. A deploy shows its version
+in Settings and in `GET /health`.
+
+## 0.2.0
+
+### Reliability
+
+- Sweep the emails that stay in the send queue. The cron job now handles
+  each email that is pending for 30 minutes or more.
+- Keep the claim when the write of the message ID fails. The consumer
+  tries the write 3 times, then it writes an `error` system event.
+- Record a failed event when the put on the queue fails.
+- Widen the pending window of an idempotency key.
+- Store dead queue messages in the system events.
+- Delete the R2 bodies together with the old rows in the retention job.
+- Escape the `LIKE` wildcards in search terms.
+- Cut the table scans in the overview query. The overview returns
+  `has_emails` in place of `total_emails`.
+- Order the webhook attempts by the attempt number.
+
+### Resend parity
+
+- Send the headers `retry-after` and `ratelimit-*` with a 429 response.
+- Answer 405 with an `Allow` header for a wrong method on a public path.
+- Add the six error names that the Resend SDK has and fullsend did not.
+- Page the lists of domains, API keys and webhooks with `limit`, `after`
+  and `before`.
+- Refuse the domain fields that fullsend ignores (`region`, `tls`,
+  `custom_return_path` and `tracking_subdomain`) with a 422.
+- Accept all 23 webhook event types of the SDK.
+- Send `domain.updated` when the status of a domain changes.
+
+### New endpoints
+
+- `/suppressions`: add, list, get, remove, and batch add and remove. fullsend
+  sends `suppression.added` and `suppression.removed`.
+- `PATCH /api-keys/:id` renames an API key.
+- `GET /emails/:id/attachments` and `GET /emails/:id/attachments/:id`,
+  with a signed download link that expires after one hour.
+- `GET /webhooks/:id/events`, the event, its attempts, and
+  `POST /webhooks/:id/events/:id/replay`.
+- `GET /emails/metrics`.
+- `GET /health` returns the `version` field.
+
+### Dashboard API
+
+- Add the system events API, `GET /api/system-events`.
+- Add `POST /api/settings/access/sync-paths`. It updates the public paths
+  of the "fullsend API" Access application in a deploy that has Access.
+- `GET /api/settings` returns `version` and `access.paths_current`.
+- Settings shows the version.
+
+### Documentation
+
+- Add the new endpoints, the differences from Resend and the Access path
+  sync to the README.
+- Add the Webhooks section: the event types, the signature headers and the
+  retry schedule.
+- Change the "Update a deploy" commands. They keep a value of `OLD` that
+  you set, they exclude `ci.yml`, and they write the version in the commit
+  message.
+
+### Development
+
+- CI runs `wrangler deploy --dry-run` after the build.
+- Add the Renovate configuration. Renovate does nothing until the owner
+  installs the Renovate app.
+
+## 0.1.0
+
+The first release.
+
+- A Resend-compatible email API in one Cloudflare Worker. The official
+  `resend` SDK works with no patch.
+- Send through the `send_email` binding, with a queue, retries and
+  scheduled emails.
+- Domains, API keys and webhooks with Svix signatures.
+- Open and click tracking.
+- The React dashboard, with sign-in through Cloudflare Access or a
+  password.
+- The `FullsendRpc` entrypoint for a service binding.
+- A deploy through the Deploy to Cloudflare button.

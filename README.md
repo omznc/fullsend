@@ -75,21 +75,30 @@ values, set the `SESSION_SECRET` or `SETUP_TOKEN` secret with
 
 The Deploy button makes a copy of this repo, not a fork, so GitHub cannot
 sync it. Cloudflare also writes the D1 database ID into `wrangler.jsonc` of
-the copy. Apply the new changes as a patch, then push. The push deploys the
-Worker.
+the copy, and it removes `.github/workflows/ci.yml`. Apply the new changes
+as a patch, then push. The push deploys the Worker.
 
 For the first update, set `OLD` to the commit of this repo that you
-deployed. After that, the commands read it from the last update commit.
+deployed. Run `OLD=<commit>` before the commands. After that, the commands
+read it from the last update commit. The subject of that commit ends with
+the commit hash. Do not change the end of the subject.
+
+The patch command excludes `ci.yml`, because the copy has no such file.
 
 ```sh
 git clone git@github.com:<you>/fullsend.git && cd fullsend
 git fetch https://github.com/omznc/fullsend.git main
-OLD=$(git log -1 --format=%s | grep -o '[0-9a-f]\{7,\}$')
+OLD=${OLD:-$(git log -1 --format=%s | grep -o '[0-9a-f]\{7,\}$')}
 NEW=$(git rev-parse --short FETCH_HEAD)
-git diff --binary "$OLD" "$NEW" | git apply --index
-git commit -m "update to omznc/fullsend $NEW"
+VERSION=$(git show FETCH_HEAD:package.json | grep -m1 '"version"' | grep -o '[0-9][0-9.]*')
+git diff --binary "$OLD" "$NEW" | git apply --index --exclude=.github/workflows/ci.yml
+git commit -m "update to omznc/fullsend v$VERSION $NEW"
 git push
 ```
+
+The commands work in bash and in zsh. After the deploy, check the version
+in Settings in the dashboard, or in the `version` field of `GET /health`.
+The version and the changes of each release are in `CHANGELOG.md`.
 
 "No valid patches in input" means that the copy is up to date.
 
@@ -269,6 +278,66 @@ event and attachment lists use the Resend cursor pages (`limit`, `after`,
 > "fullsend API" Access application. After an update, send
 > `POST /api/settings/access/sync-paths` from the dashboard session. The
 > setup does the same when it reuses the application.
+
+---
+
+## Webhooks
+
+A webhook gets a `POST` with a JSON body for each event that it wants. The
+body has the Resend shape: `type`, `created_at` and `data`.
+
+fullsend sends these event types:
+
+- `email.scheduled`, `email.sent`, `email.delivered`,
+  `email.delivery_delayed`, `email.bounced`, `email.complained`,
+  `email.opened`, `email.clicked`, `email.failed` and `email.suppressed`.
+- `suppression.added` and `suppression.removed`.
+- `domain.updated`. fullsend sends it when the status of a domain changes.
+
+Example of an `email.*` event:
+
+```json
+{
+  "type": "email.delivered",
+  "created_at": "2026-10-01T12:00:05.000Z",
+  "data": {
+    "created_at": "2026-10-01T12:00:00.000Z",
+    "email_id": "9b0f7c2e-6a1d-4c53-8f0e-2d1a7c9e4b11",
+    "from": "Acme <hello@email.example.com>",
+    "to": ["omar@example.net"],
+    "subject": "Hello",
+    "message_id": "<abc123@email.example.com>"
+  }
+}
+```
+
+The `suppression.*` and `domain.updated` events follow the Resend shapes.
+The `bounced`, `clicked` and `failed` events add a `bounce`, `click` or
+`failed` object to `data`.
+
+Each request has the Svix signature headers:
+
+| Header                                                 | Value                                                 |
+| ------------------------------------------------------ | ----------------------------------------------------- |
+| `svix-id`                                              | The message ID. A retry keeps it.                     |
+| `svix-timestamp`                                       | The time of the attempt, in seconds.                  |
+| `svix-signature`                                       | `v1,` and the HMAC-SHA256 signature.                  |
+| `webhook-id`, `webhook-timestamp`, `webhook-signature` | The same values, for the Standard Webhooks libraries. |
+
+Use `resend.webhooks.verify()` or the `svix` package to check a request.
+
+A response with a 2xx status code ends the delivery. Any other response, a
+network error or no answer in 15 seconds fails the attempt. After a failed
+attempt, fullsend tries again with these delays:
+
+| Attempt | 1   | 2     | 3      | 4   | 5   | 6    | 7    | 8       |
+| ------- | --- | ----- | ------ | --- | --- | ---- | ---- | ------- |
+| Delay   | 5 s | 5 min | 30 min | 2 h | 5 h | 10 h | 10 h | No more |
+
+The delay in a column is the wait after that attempt. After attempt 8,
+fullsend stops and writes a warning in the system events. Read them with
+`GET /api/system-events` in the dashboard API. To send a stored event again, use
+`POST /webhooks/:id/events/:id/replay`.
 
 ---
 

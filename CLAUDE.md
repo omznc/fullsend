@@ -141,6 +141,16 @@ formats Markdown and JSON. `worker/migrations`, `pnpm-lock.yaml` and
   secret goes in `worker/src/env.ts` and as a comment in
   `.dev.vars.example`.
 
+## Release
+
+To make a release:
+
+1. Set `version` in the root `package.json`. The test
+   `worker/test/version.test.ts` keeps `VERSION` in `worker/src/version.ts`
+   in step with it. Change both.
+2. Add a section `## <version>` at the top of `CHANGELOG.md`.
+3. Commit. The user tags the commit `v<version>`. Agents do not push tags.
+
 ## Gotchas
 
 - The dashboard API returns errors as `{ error, message }`. The public API
