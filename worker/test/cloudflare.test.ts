@@ -1,6 +1,7 @@
 import { createExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { DomainUpdatedEvent } from "resend";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   createDomain,
@@ -21,9 +22,33 @@ import {
   parseJsonText,
 } from "../src/lib/json";
 import { sessionSecret, setupCode } from "../src/lib/secrets";
+import { createWebhook } from "../src/webhooks/service";
 import { BASE } from "./helpers";
 
 const ACCOUNT = "acc123";
+
+const domainUpdated = z.object({
+  type: z.literal("domain.updated"),
+  created_at: z.string(),
+  data: z.object({
+    id: z.string(),
+    name: z.string(),
+    status: z.string(),
+    created_at: z.string(),
+    region: z.string(),
+    records: z.array(
+      z.object({
+        record: z.string(),
+        name: z.string(),
+        type: z.string(),
+        ttl: z.string(),
+        status: z.string(),
+        value: z.string(),
+        priority: z.number().optional(),
+      }),
+    ),
+  }),
+});
 
 const API = "https://api.cloudflare.com/client/v4";
 
@@ -393,6 +418,70 @@ describe("verify and delete", () => {
     const fixed = await verifyDomain(cfEnv, row.id);
     expect(fixed.status).toBe("verified");
     expect((await getDomain(env, row.id)).status).toBe("verified");
+  });
+
+  it("sends domain.updated when the status changes, not before", async () => {
+    fake = fakeCloudflare(
+      baseRoutes({
+        "GET /zones/zone1/email/sending/subdomains": [],
+        "POST /zones/zone1/email/sending/subdomains": {
+          tag: "tag9",
+          name: "evt.example.com",
+          enabled: true,
+        },
+        "GET /zones/zone1/email/sending/subdomains/tag9/dns/status": {
+          ...READY,
+          status: "misconfigured",
+          errors: [{ code: "spf.missing" }],
+        },
+        "POST /zones/zone1/email/sending/subdomains/tag9/dns": READY,
+      }),
+    );
+
+    await createWebhook(env, {
+      endpoint: "https://hooks.example.com/domain",
+      events: ["domain.updated"],
+    });
+
+    const queue = vi
+      .spyOn(env.HOOKS_QUEUE, "sendBatch")
+      .mockResolvedValue({
+        metadata: { metrics: { backlogCount: 0, backlogBytes: 0 } },
+      });
+
+    try {
+      const row = await createDomain(cfEnv, { name: "evt.example.com" });
+      expect(queue).not.toHaveBeenCalled();
+
+      await verifyDomain(cfEnv, row.id);
+      expect(queue).toHaveBeenCalledTimes(1);
+
+      const sent = queue.mock.calls[0]![0];
+      expect(sent).toHaveLength(1);
+      const message = [...sent][0]!.body;
+      expect(message.eventId).toBeNull();
+
+      // The schema is assigned to the SDK type, so a change of the SDK
+      // type breaks the compile.
+      const event: DomainUpdatedEvent = domainUpdated.parse(
+        parseJsonText(message.body!),
+      );
+
+      expect(event.type).toBe("domain.updated");
+      expect(event.data).toMatchObject({
+        id: row.id,
+        name: "evt.example.com",
+        status: "verified",
+        region: "global",
+      });
+      expect(event.data.records.length).toBeGreaterThan(0);
+
+      // The status is the same now, so a second verify sends nothing.
+      await verifyDomain(cfEnv, row.id);
+      expect(queue).toHaveBeenCalledTimes(1);
+    } finally {
+      queue.mockRestore();
+    }
   });
 
   it("offboards a domain that fullsend onboarded", async () => {

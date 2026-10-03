@@ -95,19 +95,44 @@ export async function buildEventBody(
   };
 }
 
+// The `data` of a test event. It has the shape of the Resend SDK for the
+// type, so a receiver can parse it.
+function testData(type: string, now: string): JsonObject {
+  if (type.startsWith("domain.")) {
+    return {
+      id: "00000000-0000-0000-0000-000000000000",
+      name: "example.com",
+      status: "verified",
+      created_at: now,
+      region: "global",
+      records: [],
+      test: true,
+    };
+  }
+
+  if (type.startsWith("suppression.")) {
+    return {
+      id: "sup_test",
+      email: "delivered@example.com",
+      origin: "manual",
+      source_id: null,
+      created_at: now,
+      test: true,
+    };
+  }
+
+  return {
+    created_at: now,
+    email_id: "00000000-0000-0000-0000-000000000000",
+    from: "fullsend <test@example.com>",
+    to: ["delivered@example.com"],
+    subject: "fullsend test event",
+    test: true,
+  };
+}
+
 export function testBody(type = "email.sent"): string {
   const now = new Date().toISOString();
 
-  return JSON.stringify({
-    type,
-    created_at: now,
-    data: {
-      created_at: now,
-      email_id: "00000000-0000-0000-0000-000000000000",
-      from: "fullsend <test@example.com>",
-      to: ["delivered@example.com"],
-      subject: "fullsend test event",
-      test: true,
-    },
-  });
+  return JSON.stringify({ type, created_at: now, data: testData(type, now) });
 }

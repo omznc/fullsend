@@ -2,6 +2,7 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { type DomainRecord, type DomainStatus, domains } from "../db/schema";
 import type { Env } from "../env";
+import { emitEvent } from "../events/record";
 import {
   Cloudflare,
   CloudflareError,
@@ -381,7 +382,26 @@ export async function syncDomain(
 
   await getDb(env).update(domains).set(patch).where(eq(domains.id, row.id));
 
-  return { ...row, ...patch };
+  const synced = { ...row, ...patch };
+
+  // Only a change of the status sends the event, not each sync.
+  if (patch.status !== row.status) {
+    await emitEvent(env, "domain.updated", domainEventData(synced));
+  }
+
+  return synced;
+}
+
+// The `data` of a domain event, as the Resend SDK types it.
+export function domainEventData(row: DomainRow): JsonObject {
+  return {
+    id: row.id,
+    name: row.name,
+    status: row.status,
+    created_at: iso(row.createdAt),
+    region: row.region,
+    records: row.records.map((r) => ({ ...r })),
+  };
 }
 
 export async function verifyDomain(env: Env, id: string): Promise<DomainRow> {

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { EmailStatus, emails } from "../db/schema";
 import type { Env, HookMessage } from "../env";
 import { type JsonObject, parseJsonText } from "../lib/json";
+import { errorText, logSystemEvent } from "../lib/system-events";
 
 export type EmailRow = typeof emails.$inferSelect;
 
@@ -20,7 +21,50 @@ export const WEBHOOK_EVENT: Partial<Record<EmailStatus, string>> = {
   suppressed: "email.suppressed",
 };
 
-export const WEBHOOK_EVENTS = Object.values(WEBHOOK_EVENT);
+// The webhook events that do not come from an email event. fullsend
+// sends them from the code that changes the suppression list and the
+// domain status.
+const OTHER_EVENTS = [
+  "suppression.added",
+  "suppression.removed",
+  "domain.updated",
+];
+
+// The events that fullsend sends. The dashboard offers these.
+export const WEBHOOK_EVENTS: string[] = [
+  ...Object.values(WEBHOOK_EVENT),
+  ...OTHER_EVENTS,
+];
+
+// Each event type of the Resend SDK (`WebhookEvent`). A webhook can
+// subscribe to each one. fullsend sends only the types in WEBHOOK_EVENTS.
+// The rest have no source here: fullsend has no contacts, no topics and
+// no receiving, and it does not send domain.created or domain.deleted.
+export const ACCEPTED_WEBHOOK_EVENTS: readonly string[] = [
+  "email.sent",
+  "email.scheduled",
+  "email.delivered",
+  "email.delivery_delayed",
+  "email.complained",
+  "email.bounced",
+  "email.opened",
+  "email.clicked",
+  "email.received",
+  "email.failed",
+  "email.suppressed",
+  "contact.created",
+  "contact.updated",
+  "contact.deleted",
+  "contact.topics.updated",
+  "domain.created",
+  "domain.updated",
+  "domain.deleted",
+  "suppression.added",
+  "suppression.removed",
+  "topic.created",
+  "topic.updated",
+  "topic.deleted",
+];
 
 // The status column only moves forward. A delivered event for one
 // recipient does not hide a bounce for another. Opens and clicks change
@@ -200,6 +244,49 @@ export async function fanout(
 
   for (let i = 0; i < messages.length; i += 100) {
     await env.HOOKS_QUEUE.sendBatch(messages.slice(i, i + 100));
+  }
+}
+
+// Sends a webhook event that has no email event row, to each enabled
+// webhook that wants the type. The message holds the full body, as a test
+// event does. It never throws: the caller has done its work, and a failed
+// webhook must not undo it. A failure goes to the system events.
+export async function emitEvent(
+  env: Env,
+  type: string,
+  data: JsonObject,
+  loaded?: Hook[],
+): Promise<void> {
+  try {
+    const hooks = (loaded ?? (await loadHooks(env))).filter((h) =>
+      h.events.includes(type),
+    );
+
+    if (!hooks.length) return;
+
+    const body = JSON.stringify({
+      type,
+      created_at: new Date().toISOString(),
+      data,
+    });
+
+    await env.HOOKS_QUEUE.sendBatch(
+      hooks.map((hook) => ({
+        body: {
+          webhookId: hook.id,
+          messageId: newMessageId(),
+          eventId: null,
+          body,
+        },
+      })),
+    );
+  } catch (err) {
+    await logSystemEvent(env, {
+      level: "warn",
+      source: "hooks",
+      message: "A webhook event could not be put on the queue.",
+      detail: { type, error: errorText(err) },
+    });
   }
 }
 

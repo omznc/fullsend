@@ -2,7 +2,11 @@ import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { webhooks } from "../db/schema";
 import type { Env } from "../env";
-import { newMessageId, WEBHOOK_EVENTS } from "../events/record";
+import {
+  ACCEPTED_WEBHOOK_EVENTS,
+  newMessageId,
+  WEBHOOK_EVENTS,
+} from "../events/record";
 import { notFound, validation } from "../lib/errors";
 import { isString, type JsonObject, type JsonValue } from "../lib/json";
 import { inPageOrder, type Page, pageQuery } from "../lib/page";
@@ -36,9 +40,9 @@ function checkEvents(value: JsonValue | undefined): string[] {
   const events = new Set<string>();
 
   for (const e of value) {
-    if (!isString(e) || !WEBHOOK_EVENTS.includes(e)) {
+    if (!isString(e) || !ACCEPTED_WEBHOOK_EVENTS.includes(e)) {
       throw validation(
-        `Unknown event \`${String(e)}\`. fullsend sends: ${WEBHOOK_EVENTS.join(", ")}.`,
+        `Unknown event \`${String(e)}\`. Use the event types of Resend: ${ACCEPTED_WEBHOOK_EVENTS.join(", ")}.`,
       );
     }
 

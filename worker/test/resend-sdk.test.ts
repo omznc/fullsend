@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
-import { Resend } from "resend";
+import { Resend, type WebhookEvent } from "resend";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ACCEPTED_WEBHOOK_EVENTS, WEBHOOK_EVENTS } from "../src/events/record";
 import { addDomain, BASE, newKey, routeFetchToWorker } from "./helpers";
 
 // Runs the official resend SDK against the Worker, with no patch: only
@@ -519,5 +520,68 @@ describe("pagination", () => {
       statusCode: 422,
       name: "invalid_parameter",
     });
+  });
+});
+
+describe("webhook event types", () => {
+  // Each type of the SDK. The type `Record<WebhookEvent, true>` fails to
+  // compile when the SDK adds a type that this list lacks.
+  const SDK_EVENTS: Record<WebhookEvent, true> = {
+    "email.sent": true,
+    "email.scheduled": true,
+    "email.delivered": true,
+    "email.delivery_delayed": true,
+    "email.complained": true,
+    "email.bounced": true,
+    "email.opened": true,
+    "email.clicked": true,
+    "email.received": true,
+    "email.failed": true,
+    "email.suppressed": true,
+    "contact.created": true,
+    "contact.updated": true,
+    "contact.deleted": true,
+    "contact.topics.updated": true,
+    "domain.created": true,
+    "domain.updated": true,
+    "domain.deleted": true,
+    "suppression.added": true,
+    "suppression.removed": true,
+    "topic.created": true,
+    "topic.updated": true,
+    "topic.deleted": true,
+  };
+
+  const all = Object.keys(SDK_EVENTS);
+
+  it("accepts each type of the SDK, and sends a part of them", () => {
+    expect([...ACCEPTED_WEBHOOK_EVENTS].toSorted()).toEqual(all.toSorted());
+
+    for (const type of WEBHOOK_EVENTS) {
+      expect(ACCEPTED_WEBHOOK_EVENTS).toContain(type);
+    }
+  });
+
+  it("creates and updates a webhook for each type", async () => {
+    const created = await resend.webhooks.create({
+      endpoint: "https://hooks.example.com/all",
+      // SAFETY: the keys of SDK_EVENTS are the WebhookEvent types.
+      events: all as WebhookEvent[],
+    });
+
+    expect(created.error).toBeNull();
+    const id = created.data!.id;
+    const got = await resend.webhooks.get(id);
+    expect(got.data?.events).toHaveLength(all.length);
+
+    const updated = await resend.webhooks.update(id, {
+      events: ["contact.created", "domain.updated"],
+    });
+
+    expect(updated.error).toBeNull();
+    expect((await resend.webhooks.get(id)).data?.events).toEqual([
+      "contact.created",
+      "domain.updated",
+    ]);
   });
 });

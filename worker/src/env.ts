@@ -6,10 +6,11 @@ export interface HookMessage {
   webhookId: string;
   // The svix-id. The same for each attempt.
   messageId: string;
-  // An email_events id, or null for a test event.
+  // An email_events id, or null when `body` has the full body.
   eventId: string | null;
-  // The full body for a test event. Null for a real event: the consumer
-  // builds the body from the event row.
+  // The full body for a test event, a suppression event or a domain
+  // event. Null for an email event: the consumer builds the body from the
+  // event row.
   body: string | null;
 }
 
