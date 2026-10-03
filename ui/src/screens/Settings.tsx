@@ -400,8 +400,30 @@ function PasswordRow() {
   );
 }
 
-function AccessSection({ data }: { data: SettingsData }) {
+function AccessSection({
+  data,
+  reload,
+}: {
+  data: SettingsData;
+  reload: Reload;
+}) {
   const password = data.auth_mode === "password";
+  const toast = useToast();
+  const [syncing, setSyncing] = useState(false);
+
+  const sync = async () => {
+    setSyncing(true);
+
+    try {
+      await api("/settings/access/sync-paths", { method: "POST" });
+      toast({ tone: "success", message: "Access paths are up to date." });
+      await reload();
+    } catch (err) {
+      toast({ tone: "error", message: errorText(err) });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   return (
     <Section
@@ -436,6 +458,28 @@ function AccessSection({ data }: { data: SettingsData }) {
           <Row label="Public paths" hint="your apps call these with API keys">
             <Chips items={data.access.public_paths.map((p) => `${p}*`)} />
           </Row>
+          {data.access.paths_current === false && (
+            <div className="border-b border-line px-4 py-3 md:px-8">
+              <Notice
+                tone="amber"
+                title="Access does not list every public path."
+                action={
+                  <Button
+                    icon="reload"
+                    busy={syncing}
+                    onClick={() => void sync()}
+                    className="max-md:h-11"
+                  >
+                    sync paths
+                  </Button>
+                }
+              >
+                This version has a public path that the Access application does
+                not have. Calls to it get an Access login page until you sync.
+                The sync needs the Cloudflare token.
+              </Notice>
+            </div>
+          )}
           <Row label="Manage">
             <ButtonLink
               href="https://one.dash.cloudflare.com/"
@@ -556,7 +600,7 @@ function Content({ data, reload }: { data: SettingsData; reload: Reload }) {
         </Row>
       </Section>
       <CloudflareSection />
-      <AccessSection data={data} />
+      <AccessSection data={data} reload={reload} />
       <section className="grid md:grid-cols-[320px_minmax(0,1fr)]">
         <div className="flex flex-col gap-1.5 px-4 pt-5 md:border-r md:border-line md:px-8 md:py-5">
           <h2 className="m-0 text-[15px] font-semibold text-red">

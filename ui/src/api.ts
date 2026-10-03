@@ -369,6 +369,9 @@ export interface Settings {
     team_domain: string | null;
     configured: boolean;
     public_paths: string[];
+    // False when the "fullsend API" Access application lacks a public
+    // path. Null when there is no Access.
+    paths_current: boolean | null;
   };
   cloudflare_token_set: boolean;
   auth_mode: "access" | "password";
