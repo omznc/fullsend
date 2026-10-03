@@ -8,6 +8,7 @@ import { validation } from "../lib/errors";
 import { asRecord, isHostname, readJson } from "../lib/http";
 import { isString } from "../lib/json";
 import { likeContains } from "../lib/like";
+import { parsePage } from "../lib/page";
 import {
   DEFAULTS,
   getSettings,
@@ -17,7 +18,6 @@ import {
 import { DAY, iso, isoOrNull } from "../lib/time";
 import { PUBLIC_PATHS } from "../public-paths";
 import { parseAddressColumn } from "../send/consumer";
-import { parsePage } from "../send/manage";
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
 import { dashDomain } from "./domains";
 import { FAILURES_SQL } from "./failures-sql";

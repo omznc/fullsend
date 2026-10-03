@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { type DomainRecord, type DomainStatus, domains } from "../db/schema";
 import type { Env } from "../env";
@@ -16,6 +16,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "../lib/json";
+import { inPageOrder, type Page, pageQuery } from "../lib/page";
 import { getSettings } from "../lib/settings";
 import { errorText } from "../lib/system-events";
 import { iso } from "../lib/time";
@@ -153,6 +154,28 @@ export function toRecords(dns: DnsStatus): DomainRecord[] {
 
 export function listDomains(env: Env): Promise<DomainRow[]> {
   return getDb(env).select().from(domains).orderBy(desc(domains.createdAt));
+}
+
+// One page of the domains, newest first.
+export async function listDomainsPage(
+  env: Env,
+  page: Page,
+): Promise<{ rows: DomainRow[]; has_more: boolean }> {
+  const { rows, has_more } = await pageQuery<{ id: string }>(
+    env,
+    "domains",
+    [],
+    [],
+    page,
+  );
+
+  const ids = rows.map((r) => r.id);
+
+  const found = ids.length
+    ? await getDb(env).select().from(domains).where(inArray(domains.id, ids))
+    : [];
+
+  return { rows: inPageOrder(found, ids), has_more };
 }
 
 export async function getDomain(env: Env, id: string): Promise<DomainRow> {

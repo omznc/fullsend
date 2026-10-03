@@ -1,9 +1,10 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { apiKeys, domains } from "../db/schema";
 import type { Env } from "../env";
 import { randomBase62, sha256Hex } from "../lib/crypto";
 import { ApiError, notFound, validation } from "../lib/errors";
+import { inPageOrder, type Page, pageQuery } from "../lib/page";
 import { getSetting } from "../lib/settings";
 
 export type ApiKeyRow = typeof apiKeys.$inferSelect;
@@ -75,6 +76,28 @@ export function listKeys(env: Env): Promise<ApiKeyRow[]> {
     .from(apiKeys)
     .where(isNull(apiKeys.revokedAt))
     .orderBy(desc(apiKeys.createdAt));
+}
+
+// One page of the active keys, newest first.
+export async function listKeysPage(
+  env: Env,
+  page: Page,
+): Promise<{ rows: ApiKeyRow[]; has_more: boolean }> {
+  const { rows, has_more } = await pageQuery<{ id: string }>(
+    env,
+    "api_keys",
+    ["revoked_at IS NULL"],
+    [],
+    page,
+  );
+
+  const ids = rows.map((r) => r.id);
+
+  const found = ids.length
+    ? await getDb(env).select().from(apiKeys).where(inArray(apiKeys.id, ids))
+    : [];
+
+  return { rows: inPageOrder(found, ids), has_more };
 }
 
 export async function revokeKey(env: Env, id: string): Promise<void> {

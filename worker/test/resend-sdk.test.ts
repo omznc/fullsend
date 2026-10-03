@@ -422,3 +422,102 @@ describe("webhooks", () => {
     expect(error).toMatchObject({ statusCode: 422, name: "validation_error" });
   });
 });
+
+describe("pagination", () => {
+  // Reads each page with `after` and returns the ids in order.
+  async function walk(
+    list: (after?: string) => Promise<{
+      data: { has_more: boolean; data: { id: string }[] } | null;
+    }>,
+  ): Promise<string[]> {
+    const ids: string[] = [];
+    let after: string | undefined;
+
+    for (let i = 0; i < 20; i++) {
+      const page = await list(after);
+
+      expect(page.data).not.toBeNull();
+      ids.push(...page.data!.data.map((r) => r.id));
+
+      if (!page.data!.has_more) return ids;
+      after = page.data!.data.at(-1)!.id;
+    }
+
+    throw new Error("The list did not end.");
+  }
+
+  it("pages domains", async () => {
+    await addDomain("p1.example.com");
+    await addDomain("p2.example.com");
+    await addDomain("p3.example.com");
+
+    const first = await resend.domains.list({ limit: 2 });
+    expect(first.data?.data).toHaveLength(2);
+    expect(first.data?.has_more).toBe(true);
+
+    const ids = await walk((after) =>
+      resend.domains.list(after ? { limit: 2, after } : { limit: 2 }),
+    );
+
+    const all = await resend.domains.list({ limit: 100 });
+    expect(all.data?.has_more).toBe(false);
+    expect(ids).toEqual(all.data!.data.map((d) => d.id));
+    expect(new Set(ids).size).toBe(ids.length);
+
+    const before = await resend.domains.list({ limit: 1, before: ids[2]! });
+    expect(before.data?.data.map((d) => d.id)).toEqual([ids[1]]);
+  });
+
+  it("pages API keys and skips a removed key", async () => {
+    const made = [];
+
+    for (let i = 0; i < 3; i++) {
+      made.push((await resend.apiKeys.create({ name: `page-${i}` })).data!.id);
+    }
+
+    await resend.apiKeys.remove(made[1]!);
+
+    const ids = await walk((after) =>
+      resend.apiKeys.list(after ? { limit: 2, after } : { limit: 2 }),
+    );
+
+    expect(ids).toContain(made[0]);
+    expect(ids).toContain(made[2]);
+    expect(ids).not.toContain(made[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("pages webhooks", async () => {
+    for (let i = 0; i < 3; i++) {
+      await resend.webhooks.create({
+        endpoint: `https://hooks.example.com/page-${i}`,
+        events: ["email.sent"],
+      });
+    }
+
+    const first = await resend.webhooks.list({ limit: 2 });
+    expect(first.data?.has_more).toBe(true);
+    expect(first.data?.data[0]).toHaveProperty("endpoint");
+
+    const ids = await walk((after) =>
+      resend.webhooks.list(after ? { limit: 2, after } : { limit: 2 }),
+    );
+
+    expect(ids.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("rejects a bad limit and an unknown cursor", async () => {
+    const limit = await resend.domains.list({ limit: 101 });
+    expect(limit.error).toMatchObject({
+      statusCode: 422,
+      name: "invalid_parameter",
+    });
+
+    const cursor = await resend.webhooks.list({ after: "missing" });
+    expect(cursor.error).toMatchObject({
+      statusCode: 422,
+      name: "invalid_parameter",
+    });
+  });
+});

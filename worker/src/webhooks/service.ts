@@ -1,10 +1,11 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { webhooks } from "../db/schema";
 import type { Env } from "../env";
 import { newMessageId, WEBHOOK_EVENTS } from "../events/record";
 import { notFound, validation } from "../lib/errors";
 import { isString, type JsonObject, type JsonValue } from "../lib/json";
+import { inPageOrder, type Page, pageQuery } from "../lib/page";
 import { testBody } from "./payload";
 import { newSecret } from "./sign";
 
@@ -67,6 +68,28 @@ export async function createWebhook(
 
 export function listWebhooks(env: Env): Promise<WebhookRow[]> {
   return getDb(env).select().from(webhooks).orderBy(desc(webhooks.createdAt));
+}
+
+// One page of the webhooks, newest first.
+export async function listWebhooksPage(
+  env: Env,
+  page: Page,
+): Promise<{ rows: WebhookRow[]; has_more: boolean }> {
+  const { rows, has_more } = await pageQuery<{ id: string }>(
+    env,
+    "webhooks",
+    [],
+    [],
+    page,
+  );
+
+  const ids = rows.map((r) => r.id);
+
+  const found = ids.length
+    ? await getDb(env).select().from(webhooks).where(inArray(webhooks.id, ids))
+    : [];
+
+  return { rows: inPageOrder(found, ids), has_more };
 }
 
 export async function getWebhook(env: Env, id: string): Promise<WebhookRow> {

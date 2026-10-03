@@ -4,11 +4,12 @@ import {
   deleteDomain,
   domainJson,
   getDomain,
-  listDomains,
+  listDomainsPage,
   updateDomain,
   verifyDomain,
 } from "../domains/service";
 import { asRecord, readJson } from "../lib/http";
+import { parsePage } from "../lib/page";
 import { apiKeyAuth, type ApiVars } from "./auth";
 
 export const domainsApi = new Hono<ApiVars>();
@@ -24,11 +25,14 @@ domainsApi.post("/", async (c) => {
 });
 
 domainsApi.get("/", async (c) => {
-  const rows = await listDomains(c.env);
+  const { rows, has_more } = await listDomainsPage(
+    c.env,
+    parsePage(c.req.query()),
+  );
 
   return c.json({
     object: "list",
-    has_more: false,
+    has_more,
     data: rows.map((r) => {
       const { object: _, ...rest } = domainJson(r);
 

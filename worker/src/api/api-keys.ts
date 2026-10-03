@@ -1,8 +1,9 @@
 import { Hono } from "hono";
-import { createKey, listKeys, revokeKey } from "../keys/service";
+import { createKey, listKeysPage, revokeKey } from "../keys/service";
 import { validation } from "../lib/errors";
 import { asRecord, readJson } from "../lib/http";
 import { isString } from "../lib/json";
+import { parsePage } from "../lib/page";
 import { iso, isoOrNull } from "../lib/time";
 import { apiKeyAuth, type ApiVars } from "./auth";
 
@@ -35,11 +36,14 @@ apiKeysApi.post("/", async (c) => {
 });
 
 apiKeysApi.get("/", async (c) => {
-  const rows = await listKeys(c.env);
+  const { rows, has_more } = await listKeysPage(
+    c.env,
+    parsePage(c.req.query()),
+  );
 
   return c.json({
     object: "list",
-    has_more: false,
+    has_more,
     data: rows.map((k) => ({
       id: k.id,
       name: k.name,

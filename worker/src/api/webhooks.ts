@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { asRecord, readJson } from "../lib/http";
+import { parsePage } from "../lib/page";
 import { iso } from "../lib/time";
 import {
   createWebhook,
   deleteWebhook,
   getWebhook,
-  listWebhooks,
+  listWebhooksPage,
   rotateSecret,
   updateWebhook,
 } from "../webhooks/service";
@@ -22,11 +23,14 @@ webhooksApi.post("/", async (c) => {
 });
 
 webhooksApi.get("/", async (c) => {
-  const rows = await listWebhooks(c.env);
+  const { rows, has_more } = await listWebhooksPage(
+    c.env,
+    parsePage(c.req.query()),
+  );
 
   return c.json({
     object: "list",
-    has_more: false,
+    has_more,
     data: rows.map((w) => ({
       id: w.id,
       endpoint: w.endpoint,

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { EmailRow } from "../events/record";
 import { notFound, validation } from "../lib/errors";
 import { asRecord, readJson } from "../lib/http";
+import { parsePage } from "../lib/page";
 import { iso, isoOrNull } from "../lib/time";
 import { createEmail } from "../send/create";
 import {
@@ -9,7 +10,6 @@ import {
   getBody,
   getEmail,
   listEmails,
-  parsePage,
   reschedule,
 } from "../send/manage";
 import type { DashVars } from "./auth";

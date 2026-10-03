@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { asRecord, parseJson, readJson } from "../lib/http";
+import { parsePage } from "../lib/page";
 import { createBatch, createEmail } from "../send/create";
 import { withIdempotency } from "../send/idempotency";
 import {
@@ -9,7 +10,6 @@ import {
   getBody,
   getEmail,
   listEmails,
-  parsePage,
   reschedule,
 } from "../send/manage";
 import { apiKeyAuth, type ApiVars } from "./auth";
