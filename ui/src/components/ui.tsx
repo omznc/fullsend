@@ -3,6 +3,7 @@ import {
   type CSSProperties,
   createContext,
   type InputHTMLAttributes,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type TextareaHTMLAttributes,
   useCallback,
@@ -13,6 +14,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { ApiRequestError } from "../api";
 import { number, relative, utc } from "../lib/format";
 import { EXIT_MS, useDismiss, useNow, usePresence } from "../lib/hooks";
@@ -1076,65 +1078,73 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={push}>
       {children}
-      <div aria-live="polite" className="sr-only">
-        {live}
-      </div>
-      <div className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(380px,calc(100vw-32px))] flex-col gap-2">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            data-state={t.closing ? "closed" : "open"}
-            className={cx(
-              "fs-toast pointer-events-auto flex items-center gap-2 border bg-raised py-2 pr-2 pl-2.5 shadow-[0_10px_30px_var(--shadow)]",
-              t.tone === "error" ? "border-red" : "border-line2",
-            )}
-          >
-            <Icon
-              name={
-                t.tone === "error"
-                  ? "alert"
-                  : t.tone === "success"
-                    ? "check"
-                    : "info-box"
-              }
-              className={
-                t.tone === "error"
-                  ? "text-red"
-                  : t.tone === "success"
-                    ? "text-green"
-                    : "text-blue"
-              }
-            />
-            <span className="flex-1">{t.message}</span>
-            {t.action &&
-              (t.action.href ? (
-                <Link
-                  href={t.action.href}
-                  className="font-mono text-[12px]"
-                  onClick={() => dismiss(t.id)}
-                >
-                  {t.action.label}
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  className="border-0 bg-transparent font-mono text-[12px] text-fg underline"
-                  onClick={() => {
-                    t.action?.onClick?.();
-                    dismiss(t.id);
-                  }}
-                >
-                  {t.action.label}
-                </button>
-              ))}
-            <IconButton
-              icon="close"
-              label="Dismiss"
-              onClick={() => dismiss(t.id)}
-            />
+      {/* A portal in the body, outside the app. A modal panel makes the app
+          inert, and the toasts must stay active. */}
+      {createPortal(
+        <div
+          data-inert-skip
+          className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(380px,calc(100vw-32px))] flex-col gap-2"
+        >
+          <div aria-live="polite" className="sr-only">
+            {live}
           </div>
-        ))}
-      </div>
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              data-state={t.closing ? "closed" : "open"}
+              className={cx(
+                "fs-toast pointer-events-auto flex items-center gap-2 border bg-raised py-2 pr-2 pl-2.5 shadow-[0_10px_30px_var(--shadow)]",
+                t.tone === "error" ? "border-red" : "border-line2",
+              )}
+            >
+              <Icon
+                name={
+                  t.tone === "error"
+                    ? "alert"
+                    : t.tone === "success"
+                      ? "check"
+                      : "info-box"
+                }
+                className={
+                  t.tone === "error"
+                    ? "text-red"
+                    : t.tone === "success"
+                      ? "text-green"
+                      : "text-blue"
+                }
+              />
+              <span className="flex-1">{t.message}</span>
+              {t.action &&
+                (t.action.href ? (
+                  <Link
+                    href={t.action.href}
+                    className="font-mono text-[12px]"
+                    onClick={() => dismiss(t.id)}
+                  >
+                    {t.action.label}
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    className="border-0 bg-transparent font-mono text-[12px] text-fg underline"
+                    onClick={() => {
+                      t.action?.onClick?.();
+                      dismiss(t.id);
+                    }}
+                  >
+                    {t.action.label}
+                  </button>
+                ))}
+              <IconButton
+                icon="close"
+                label="Dismiss"
+                onClick={() => dismiss(t.id)}
+              />
+            </div>
+          ))}
+        </div>,
+        document.body,
+      )}
     </ToastContext.Provider>
   );
 }
@@ -1315,7 +1325,15 @@ function ConfirmBody({
   );
 }
 
-// A panel that slides in from the right, for detail views.
+// The elements that can take focus, for the Tab trap of a panel.
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+// A panel that slides in from the right, for detail views. It is a modal:
+// focus moves into it, Tab stays inside, Escape closes it, the page
+// behind it is inert, and focus goes back to the opener on close. The
+// panel is a portal in the body, so the other children of the body can
+// be inert. An element with data-inert-skip stays active (the toasts).
 export function SidePanel({
   open,
   onClose,
@@ -1329,11 +1347,65 @@ export function SidePanel({
   children: ReactNode;
   width?: number;
 }) {
+  const titleId = useId();
+  const root = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const shown = usePresence(open, 260);
+
+  // While the panel is closed, remember the last focused element. That
+  // is the opener when the panel opens.
+  useEffect(() => {
+    if (open) return;
+
+    const remember = (e: FocusEvent) => {
+      if (e.target instanceof HTMLElement) opener.current = e.target;
+    };
+
+    document.addEventListener("focusin", remember);
+
+    return () => document.removeEventListener("focusin", remember);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const inerted: HTMLElement[] = [];
+
+    for (const el of document.body.children) {
+      if (
+        el instanceof HTMLElement &&
+        el !== root.current &&
+        !el.inert &&
+        !el.hasAttribute("data-inert-skip")
+      ) {
+        el.inert = true;
+        inerted.push(el);
+      }
+    }
+
+    const p = panel.current;
+
+    // A field with autoFocus keeps the focus.
+    if (p && !p.contains(document.activeElement)) p.focus();
+
+    const back = opener.current;
+
+    return () => {
+      for (const el of inerted) el.inert = false;
+
+      if (back?.isConnected) back.focus();
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
 
     const fn = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // A dialog in the panel handles its own Escape.
+      const inner =
+        e.target instanceof Element && e.target.closest("dialog[open]");
+
+      if (e.key === "Escape" && !e.defaultPrevented && !inner) onClose();
     };
 
     window.addEventListener("keydown", fn);
@@ -1341,37 +1413,68 @@ export function SidePanel({
     return () => window.removeEventListener("keydown", fn);
   }, [open, onClose]);
 
-  const shown = usePresence(open, 260);
-
   if (!shown) return null;
 
-  return (
+  const trap = (e: ReactKeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Tab" || !panel.current) return;
+    const items = [...panel.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    const first = items[0];
+    const last = items.at(-1);
+
+    if (!first || !last) {
+      e.preventDefault();
+
+      return;
+    }
+
+    const at = document.activeElement;
+
+    if (e.shiftKey && (at === first || at === panel.current)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && at === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
+  return createPortal(
     <div
+      ref={root}
       data-state={open ? "open" : "closed"}
+      inert={!open}
       className="fs-sheet fixed inset-0 z-40 flex justify-end"
     >
       <button
         type="button"
         aria-label="Close panel"
-        tabIndex={open ? undefined : -1}
+        tabIndex={-1}
         className="fs-scrim absolute inset-0 border-0 bg-black/40"
         onClick={onClose}
       />
       <aside
+        ref={panel}
         role="dialog"
         aria-modal="true"
-        className="fs-panel relative flex h-full w-full flex-col overflow-hidden border-l border-line2 bg-bg shadow-[0_20px_50px_var(--shadow)]"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onKeyDown={trap}
+        className="fs-panel relative flex h-full w-full flex-col overflow-hidden border-l border-line2 bg-bg shadow-[0_20px_50px_var(--shadow)] outline-none"
         style={{ maxWidth: width }}
       >
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-line pr-2 pl-5">
-          <div className="min-w-0 truncate text-[15px] font-semibold">
+          <div
+            id={titleId}
+            className="min-w-0 truncate text-[15px] font-semibold"
+          >
             {title}
           </div>
           <IconButton icon="close" label="Close" onClick={onClose} />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
