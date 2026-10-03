@@ -13,6 +13,17 @@ export function newKeyToken(): string {
   return `fs_${randomBase62(32)}`;
 }
 
+// Checks a key name: not empty, 50 characters or fewer.
+export function checkKeyName(value: string): string {
+  const name = value.trim();
+
+  if (!name) throw validation("The `name` field must not be empty.");
+
+  if (name.length > 50) throw validation("The `name` field is too long.");
+
+  return name;
+}
+
 export async function createKey(
   env: Env,
   input: {
@@ -22,11 +33,7 @@ export async function createKey(
     rate_limit?: number | null;
   },
 ): Promise<{ id: string; token: string; row: ApiKeyRow }> {
-  const name = input.name.trim();
-
-  if (!name) throw validation("The `name` field must not be empty.");
-
-  if (name.length > 50) throw validation("The `name` field is too long.");
+  const name = checkKeyName(input.name);
   const permission = input.permission ?? "full_access";
 
   if (input.domain_id && permission !== "sending_access") {
@@ -98,6 +105,20 @@ export async function listKeysPage(
     : [];
 
   return { rows: inPageOrder(found, ids), has_more };
+}
+
+export async function renameKey(
+  env: Env,
+  id: string,
+  name: string,
+): Promise<void> {
+  const res = await getDb(env)
+    .update(apiKeys)
+    .set({ name: checkKeyName(name) })
+    .where(and(eq(apiKeys.id, id), isNull(apiKeys.revokedAt)))
+    .returning({ id: apiKeys.id });
+
+  if (!res.length) throw notFound("API key");
 }
 
 export async function revokeKey(env: Env, id: string): Promise<void> {

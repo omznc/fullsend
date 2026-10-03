@@ -344,6 +344,53 @@ describe("api keys", () => {
   });
 });
 
+describe("api key update", () => {
+  it("renames a key and refuses a bad name or a removed key", async () => {
+    const made = await resend.apiKeys.create({ name: "before" });
+    const id = made.data!.id;
+
+    const updated = await resend.apiKeys.update(id, { name: "  after  " });
+    expect(updated.data).toEqual({ object: "api_key", id });
+
+    const list = await resend.apiKeys.list({ limit: 100 });
+    expect(list.data?.data.find((k) => k.id === id)?.name).toBe("after");
+
+    const empty = await resend.apiKeys.update(id, { name: "  " });
+    expect(empty.error).toMatchObject({
+      statusCode: 422,
+      name: "validation_error",
+    });
+
+    // @ts-expect-error: the test leaves out the required field.
+    const missing = await resend.apiKeys.update(id, {});
+    expect(missing.error).toMatchObject({
+      statusCode: 422,
+      name: "missing_required_field",
+    });
+
+    const unknown = await resend.apiKeys.update(crypto.randomUUID(), {
+      name: "x",
+    });
+
+    expect(unknown.error).toMatchObject({ statusCode: 404, name: "not_found" });
+    await resend.apiKeys.remove(id);
+
+    const removed = await resend.apiKeys.update(id, { name: "x" });
+    expect(removed.error).toMatchObject({ statusCode: 404, name: "not_found" });
+  });
+
+  it("limits a sending key", async () => {
+    const { token, id } = await newKey({ permission: "sending_access" });
+    const sender = new Resend(token, { baseUrl: BASE });
+    const res = await sender.apiKeys.update(id, { name: "x" });
+
+    expect(res.error).toMatchObject({
+      statusCode: 401,
+      name: "restricted_api_key",
+    });
+  });
+});
+
 describe("domains", () => {
   it("lists, gets and updates a domain", async () => {
     const list = await resend.domains.list();
@@ -782,16 +829,18 @@ describe("suppressions", () => {
   });
 
   it("sends suppression events to a webhook", async () => {
-    await resend.webhooks.create({
+    // A new key has its own rate limit bucket.
+    const { token } = await newKey();
+    const client = new Resend(token, { baseUrl: BASE });
+
+    await client.webhooks.create({
       endpoint: "https://hooks.example.com/sup",
       events: ["suppression.added", "suppression.removed"],
     });
 
-    const queue = vi
-      .spyOn(env.HOOKS_QUEUE, "sendBatch")
-      .mockResolvedValue({
-        metadata: { metrics: { backlogCount: 0, backlogBytes: 0 } },
-      });
+    const queue = vi.spyOn(env.HOOKS_QUEUE, "sendBatch").mockResolvedValue({
+      metadata: { metrics: { backlogCount: 0, backlogBytes: 0 } },
+    });
 
     // The events that the Worker put on the queue. The schema is assigned
     // to the SDK types, so a change of an SDK type breaks the compile.
@@ -810,10 +859,11 @@ describe("suppressions", () => {
       );
 
     try {
-      const { data } = await resend.suppressions.add({
+      const { data } = await client.suppressions.add({
         email: "evt@example.org",
       });
-      await resend.suppressions.add({ email: "evt@example.org" });
+
+      await client.suppressions.add({ email: "evt@example.org" });
       expect(types().map((e) => e.type)).toEqual(["suppression.added"]);
 
       expect(types()[0]!.data).toMatchObject({
@@ -823,14 +873,14 @@ describe("suppressions", () => {
         source_id: null,
       });
 
-      await resend.suppressions.remove(data!.id);
-      await resend.suppressions.remove(data!.id);
+      await client.suppressions.remove(data!.id);
+      await client.suppressions.remove(data!.id);
       expect(types().map((e) => e.type)).toEqual([
         "suppression.added",
         "suppression.removed",
       ]);
 
-      await resend.suppressions.batch.add({
+      await client.suppressions.batch.add({
         emails: ["evt@example.org", "evt2@example.org"],
       });
 

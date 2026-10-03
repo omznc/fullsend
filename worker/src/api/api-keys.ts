@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { createKey, listKeysPage, revokeKey } from "../keys/service";
-import { validation } from "../lib/errors";
+import { createKey, listKeysPage, renameKey, revokeKey } from "../keys/service";
+import { ApiError, validation } from "../lib/errors";
 import { asRecord, readJson } from "../lib/http";
 import { isString } from "../lib/json";
 import { parsePage } from "../lib/page";
@@ -51,6 +51,20 @@ apiKeysApi.get("/", async (c) => {
       last_used_at: isoOrNull(k.lastUsedAt),
     })),
   });
+});
+
+apiKeysApi.patch("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = asRecord(await readJson(c));
+
+  if (body.name === undefined || body.name === null) {
+    throw new ApiError(422, "missing_required_field", "Missing `name` field.");
+  }
+
+  if (!isString(body.name)) throw validation("The `name` must be a string.");
+  await renameKey(c.env, id, body.name);
+
+  return c.json({ object: "api_key", id });
 });
 
 apiKeysApi.delete("/:id", async (c) => {
