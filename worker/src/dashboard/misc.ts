@@ -13,7 +13,7 @@ import {
   type SettingKey,
   setSettings,
 } from "../lib/settings";
-import { DAY, iso } from "../lib/time";
+import { DAY, iso, isoOrNull } from "../lib/time";
 import { parseAddressColumn } from "../send/consumer";
 import { parsePage } from "../send/manage";
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
@@ -114,7 +114,7 @@ miscRoutes.get("/overview", async (c) => {
 
   const since = now - period.span;
 
-  const [current, previous, series, failures, domains, total] =
+  const [current, previous, series, failures, domains, total, system] =
     await Promise.all([
       counts(c.env, since, now),
       // "all" has no period before it.
@@ -141,6 +141,15 @@ miscRoutes.get("/overview", async (c) => {
       c.env.DB.prepare("SELECT COUNT(*) AS n FROM emails").first<{
         n: number;
       }>(),
+      // The system events of the last 7 days, whatever the period is.
+      c.env.DB.prepare(
+        `SELECT COALESCE(SUM(level = 'error'), 0) AS errors,
+           COALESCE(SUM(level = 'warn'), 0) AS warnings,
+           MAX(created_at) AS latest
+         FROM system_events WHERE created_at >= ?`,
+      )
+        .bind(now - WEEK.span)
+        .first<{ errors: number; warnings: number; latest: number | null }>(),
     ]);
 
   const buckets = new Map<number, Record<string, number>>();
@@ -184,6 +193,11 @@ miscRoutes.get("/overview", async (c) => {
       at: iso(f.last_event_at),
     })),
     domains: domains.map(dashDomain),
+    system_events: {
+      errors: system?.errors ?? 0,
+      warnings: system?.warnings ?? 0,
+      latest_at: isoOrNull(system?.latest),
+    },
   });
 });
 

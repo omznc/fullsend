@@ -5,6 +5,7 @@ import { emailRoutes } from "./emails";
 import { keyRoutes } from "./keys";
 import { miscRoutes } from "./misc";
 import { setupRoutes } from "./setup";
+import { systemEventRoutes } from "./system-events";
 import { webhookRoutes } from "./webhooks";
 
 // The dashboard API under /api. The UI sends `X-Fullsend-Dashboard: 1`
@@ -43,6 +44,8 @@ guarded.route("/domains", domainRoutes);
 guarded.route("/api-keys", keyRoutes);
 
 guarded.route("/webhooks", webhookRoutes);
+
+guarded.route("/system-events", systemEventRoutes);
 
 guarded.route("/", miscRoutes);
 

@@ -248,6 +248,85 @@ describe("password mode", () => {
     expect((await get("forever")).period).toBe("7d");
   });
 
+  it("lists and clears the system events", async () => {
+    const cookie = cookieFrom(
+      await post("/api/auth/login", { password: "a new long password" }),
+    );
+
+    const now = Date.now();
+
+    await env.DB.prepare("DELETE FROM system_events").run();
+    await env.DB.prepare(
+      `INSERT INTO system_events (id, created_at, level, source, message, detail) VALUES
+       ('s1', ?1, 'error', 'cron', 'first', '{"a":1}'),
+       ('s2', ?2, 'warn', 'events', 'second', NULL),
+       ('s3', ?3, 'error', 'send', 'third', NULL),
+       ('s4', ?4, 'error', 'send', 'too old', NULL)`,
+    )
+      .bind(now - 3000, now - 2000, now - 1000, now - 8 * 86_400_000)
+      .run();
+
+    interface Page {
+      data: {
+        id: string;
+        created_at: string;
+        level: string;
+        message: string;
+        detail: unknown;
+      }[];
+      has_more: boolean;
+    }
+
+    const get = (query: string) =>
+      call(`/api/system-events${query}`, { headers: { Cookie: cookie } });
+
+    expect((await call("/api/system-events")).status).toBe(401);
+
+    const page1 = await (await get("?limit=2")).json<Page>();
+    expect(page1.data.map((e) => e.id)).toEqual(["s3", "s2"]);
+    expect(page1.has_more).toBe(true);
+    expect(page1.data[0]!.created_at).toBe(new Date(now - 1000).toISOString());
+
+    const page2 = await (await get("?limit=2&after=s2")).json<Page>();
+    expect(page2.data.map((e) => e.id)).toEqual(["s1", "s4"]);
+    expect(page2.has_more).toBe(false);
+    expect(page2.data[0]!.detail).toEqual({ a: 1 });
+
+    expect((await get("?limit=0")).status).toBe(422);
+    expect((await get("?after=nope")).status).toBe(422);
+
+    const overview = await (
+      await call("/api/overview", { headers: { Cookie: cookie } })
+    ).json<{
+      system_events: {
+        errors: number;
+        warnings: number;
+        latest_at: string | null;
+      };
+    }>();
+
+    expect(overview.system_events).toEqual({
+      errors: 2,
+      warnings: 1,
+      latest_at: new Date(now - 1000).toISOString(),
+    });
+
+    const noHeader = await call("/api/system-events", {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+
+    expect(noHeader.status).toBe(400);
+
+    const cleared = await call("/api/system-events", {
+      method: "DELETE",
+      headers: { ...json, Cookie: cookie },
+    });
+
+    expect(cleared.status).toBe(200);
+    expect((await (await get("")).json<Page>()).data).toEqual([]);
+  });
+
   // A login from one client address. The password is the one that the
   // first test of this block set last.
   const login = (ip: string, password = "a new long password") =>
