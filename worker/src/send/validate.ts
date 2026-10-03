@@ -131,7 +131,13 @@ function guessType(filename: string): string {
   return MIME.get(ext) ?? "application/octet-stream";
 }
 
-const FETCH_TIMEOUT = 10_000;
+// The time limit for the fetch of one attachment `path`.
+export const FETCH_TIMEOUT = 10_000;
+
+// The most attachments with a `path` in one email. The Worker fetches them
+// one by one, so this number sets the longest time of a request. The
+// idempotency lock uses it (see send/idempotency.ts).
+export const MAX_PATH_ATTACHMENTS = 10;
 
 // Reads the file at an attachment `path`. The read stops at MAX_SIZE, so
 // a large file cannot use up the memory of the Worker.
@@ -231,6 +237,18 @@ async function readAttachments(
       422,
       "invalid_attachment",
       "The `attachments` field must be an array.",
+    );
+  }
+
+  const paths = value.filter(
+    (raw) => isJsonObject(raw) && !isString(raw.content) && isString(raw.path),
+  ).length;
+
+  if (paths > MAX_PATH_ATTACHMENTS) {
+    throw new ApiError(
+      422,
+      "invalid_attachment",
+      `An email can have ${MAX_PATH_ATTACHMENTS} or fewer attachments with a \`path\`.`,
     );
   }
 

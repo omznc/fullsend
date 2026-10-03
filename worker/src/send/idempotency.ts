@@ -2,10 +2,20 @@ import type { Env } from "../env";
 import { sha256Hex } from "../lib/crypto";
 import { ApiError } from "../lib/errors";
 import { DAY } from "../lib/time";
+import { FETCH_TIMEOUT, MAX_PATH_ATTACHMENTS } from "./validate";
+
+// The Worker fetches the attachments with a `path` one by one. A request
+// can take MAX_PATH_ATTACHMENTS * FETCH_TIMEOUT before it writes the
+// email. The margin covers the R2 and D1 writes.
+const WORST_REQUEST = MAX_PATH_ATTACHMENTS * FETCH_TIMEOUT + 2 * 60_000;
 
 // A pending row older than this belongs to a request that died. A new
-// request may take the key again.
-const STALE_PENDING = 2 * 60_000;
+// request may take the key again. The limit must be longer than the
+// longest live request. If it is shorter, a client retry takes the key
+// while the first request is alive, and both requests send the email.
+// A retry before this limit gets "concurrent_idempotent_requests", as in
+// Resend.
+const STALE_PENDING = WORST_REQUEST;
 
 // Runs `run` one time for each Idempotency-Key. The key has a scope of
 // one API key and stays for 24 hours. The insert of the pending row is
