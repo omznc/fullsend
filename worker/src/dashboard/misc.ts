@@ -19,6 +19,7 @@ import { DAY, iso, isoOrNull } from "../lib/time";
 import { PUBLIC_PATHS } from "../public-paths";
 import { parseAddressColumn } from "../send/consumer";
 import { addSuppressions, removeSuppressions } from "../suppressions/service";
+import { VERSION } from "../version";
 import { API_APP_NAME, isApiApp, syncApiApp } from "./access-paths";
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
 import { dashDomain } from "./domains";
@@ -577,6 +578,7 @@ miscRoutes.get("/settings", async (c) => {
     },
     cloudflare_token_set: hasToken(c.env),
     auth_mode: s.auth_mode === "password" ? "password" : "access",
+    version: VERSION,
   });
 });
 

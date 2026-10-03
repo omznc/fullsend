@@ -22,6 +22,7 @@ import { errorText } from "./lib/system-events";
 import { PUBLIC_PATHS } from "./public-paths";
 import { handleSendBatch } from "./send/consumer";
 import { trackingRoutes } from "./tracking/routes";
+import { VERSION } from "./version";
 import { handleHooksBatch } from "./webhooks/deliver";
 
 export { FullsendRpc } from "./rpc";
@@ -64,7 +65,7 @@ app.use(async (c, next) => {
   await next();
 });
 
-app.get("/health", (c) => c.json({ ok: true }));
+app.get("/health", (c) => c.json({ ok: true, version: VERSION }));
 
 app.route("/t", trackingRoutes);
 

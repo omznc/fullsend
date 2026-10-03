@@ -358,6 +358,7 @@ export interface Settings {
   };
   cloudflare_token_set: boolean;
   auth_mode: "access" | "password";
+  version: string;
 }
 
 export interface SetupState {

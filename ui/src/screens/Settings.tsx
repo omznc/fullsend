@@ -551,6 +551,9 @@ function Content({ data, reload }: { data: SettingsData; reload: Reload }) {
           value={s.deploy_name}
           onSaved={reload}
         />
+        <Row label="Version">
+          <span className="text-fg3">{data.version}</span>
+        </Row>
       </Section>
       <CloudflareSection />
       <AccessSection data={data} />
