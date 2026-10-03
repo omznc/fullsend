@@ -35,6 +35,55 @@ function checkName(value: JsonValue | undefined): string {
   return name;
 }
 
+// The domain fields of Resend that fullsend cannot change. Cloudflare
+// Email Sending sets the TLS mode, the return path and the region. The
+// tracking hostname is a setting of the whole deploy. A value that equals
+// what fullsend does is accepted. Any other value gets a 422, so the
+// caller does not think that fullsend honored it.
+const REGION = "global";
+
+const TLS_MODES = ["opportunistic", "enforced"];
+
+const RETURN_PATH = "send";
+
+function present(value: JsonValue | undefined): boolean {
+  return value !== undefined && value !== null;
+}
+
+function checkUnsupported(input: JsonObject, create: boolean): void {
+  const { region, custom_return_path: path, tls } = input;
+
+  if (create && present(region) && region !== REGION) {
+    throw validation(
+      `fullsend sends from the "${REGION}" region only. Remove \`region\` or set it to "${REGION}".`,
+    );
+  }
+
+  if (create && present(path) && path !== RETURN_PATH) {
+    throw validation(
+      `fullsend cannot set \`custom_return_path\`: Cloudflare sets the return path. Remove it or set it to "${RETURN_PATH}".`,
+    );
+  }
+
+  if (present(tls)) {
+    if (!isString(tls) || !TLS_MODES.includes(tls)) {
+      throw validation("`tls` must be `opportunistic` or `enforced`.");
+    }
+
+    if (tls === "enforced") {
+      throw validation(
+        "fullsend cannot enforce TLS: Cloudflare sets the TLS mode. Remove `tls` or set it to `opportunistic`.",
+      );
+    }
+  }
+
+  if (present(input.tracking_subdomain)) {
+    throw validation(
+      "fullsend cannot set `tracking_subdomain`. The tracking hostname is one setting for the deploy. Change it in the dashboard.",
+    );
+  }
+}
+
 function needToken(env: Env): Cloudflare {
   if (!hasToken(env)) {
     throw new ApiError(
@@ -183,6 +232,7 @@ export async function createDomain(
   input: JsonObject,
 ): Promise<DomainRow> {
   const name = checkName(input.name);
+  checkUnsupported(input, true);
   const cf = needToken(env);
 
   try {
@@ -373,6 +423,7 @@ export async function updateDomain(
 ): Promise<DomainRow> {
   const row = await getDomain(env, id);
   const patch: Partial<DomainRow> = {};
+  checkUnsupported(input, false);
 
   if (input.open_tracking !== undefined) {
     if (!isBoolean(input.open_tracking))
