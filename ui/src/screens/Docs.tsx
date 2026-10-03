@@ -1,5 +1,6 @@
+import { Fragment } from "react";
 import { CodeBlock, CopyButton, Icon, TextLink, cx } from "../components/ui";
-import { useTitle } from "../lib/hooks";
+import { useApi, useTitle } from "../lib/hooks";
 import { apiBase, useSession } from "../session";
 
 const METHOD_COLOR = {
@@ -148,6 +149,8 @@ export function Docs() {
   useTitle("Docs");
   const { session } = useSession();
   const base = apiBase(session);
+  const hooks = useApi<{ events: string[] }>("/webhooks");
+  const events = hooks.data?.events ?? [];
 
   const snippets = [
     {
@@ -360,16 +363,18 @@ const event = wh.verify(rawBody, {
             <code className={code}>svix-signature</code>. The{" "}
             <code className={code}>svix</code> package and{" "}
             <code className={code}>resend.webhooks.verify()</code> check them.
-            The events are <code className={code}>email.scheduled</code>,{" "}
-            <code className={code}>email.sent</code>,{" "}
-            <code className={code}>email.delivered</code>,{" "}
-            <code className={code}>email.delivery_delayed</code>,{" "}
-            <code className={code}>email.bounced</code>,{" "}
-            <code className={code}>email.complained</code>,{" "}
-            <code className={code}>email.opened</code>,{" "}
-            <code className={code}>email.clicked</code>,{" "}
-            <code className={code}>email.failed</code> and{" "}
-            <code className={code}>email.suppressed</code>.
+            {events.length > 0 && (
+              <>
+                The events are{" "}
+                {events.map((e, i) => (
+                  <Fragment key={e}>
+                    {i > 0 && (i === events.length - 1 ? " and " : ", ")}
+                    <code className={code}>{e}</code>
+                  </Fragment>
+                ))}
+                .
+              </>
+            )}
           </p>
           <CodeBlock tabs={verify} />
         </section>

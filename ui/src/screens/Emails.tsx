@@ -62,10 +62,12 @@ const STATUSES: EmailStatus[] = [
   "suppressed",
 ];
 
+// The choices of a time filter. "since" says "last 24 hours" and "until"
+// says "24 hours ago".
 const SINCE = [
-  { label: "last 24 hours", ms: 86_400_000 },
-  { label: "last 7 days", ms: 7 * 86_400_000 },
-  { label: "last 30 days", ms: 30 * 86_400_000 },
+  { since: "last 24 hours", until: "24 hours ago", ms: 86_400_000 },
+  { since: "last 7 days", until: "7 days ago", ms: 7 * 86_400_000 },
+  { since: "last 30 days", until: "30 days ago", ms: 30 * 86_400_000 },
 ];
 
 const ALL_COLS =
@@ -82,6 +84,7 @@ const FILTER_KEYS = [
   "api_key",
   "tag",
   "since",
+  "until",
 ] as const;
 
 type FilterKey = (typeof FILTER_KEYS)[number];
@@ -97,6 +100,7 @@ function readFilters(query: URLSearchParams): Filters {
     api_key: query.get("api_key"),
     tag: query.get("tag"),
     since: query.get("since"),
+    until: query.get("until"),
   };
 }
 
@@ -132,6 +136,7 @@ export function Emails() {
     api_key: filters.api_key,
     tag: tab === "all" ? filters.tag : null,
     since: tab === "all" ? filters.since : null,
+    until: tab === "all" ? filters.until : null,
     q: filters.q,
   };
 
@@ -261,6 +266,7 @@ export function Emails() {
             domain: null,
             tag: null,
             since: null,
+            until: null,
           })
         }
         tabs={[
@@ -392,9 +398,17 @@ function FilterBar({
         <TagFilter value={filters.tag} onChange={(v) => set({ tag: v })} />
       )}
       {tab === "all" && (
-        <SinceFilter
+        <TimeFilter
+          name="since"
           value={filters.since}
           onChange={(v) => set({ since: v })}
+        />
+      )}
+      {tab === "all" && (
+        <TimeFilter
+          name="until"
+          value={filters.until}
+          onChange={(v) => set({ until: v })}
         />
       )}
       {active > 0 && (
@@ -482,17 +496,22 @@ function Picker({
   );
 }
 
-function SinceFilter({
+// A time filter. "since" keeps the emails that are newer than the point,
+// and "until" keeps the older ones. The choices are a time ago, and the
+// chip shows the point in UTC.
+function TimeFilter({
+  name,
   value,
   onChange,
 }: {
+  name: "since" | "until";
   value?: string | null;
   onChange: (v: string | null) => void;
 }) {
   if (value)
     return (
       <FilterChip
-        name="since"
+        name={name}
         value={utc(value).slice(0, 16)}
         onClear={() => onChange(null)}
       />
@@ -502,17 +521,17 @@ function SinceFilter({
     <Select
       bare
       chevron={false}
-      aria-label="Add time filter"
+      aria-label={`Add ${name} filter`}
       value=""
       display={
         <>
           <Icon name="plus" size={16} />
-          time
+          {name}
         </>
       }
-      options={SINCE.map((s) => ({ value: s.label, label: s.label }))}
+      options={SINCE.map((s) => ({ value: s[name], label: s[name] }))}
       onChange={(v) => {
-        const p = SINCE.find((s) => s.label === v);
+        const p = SINCE.find((s) => s[name] === v);
 
         if (p) onChange(new Date(Date.now() - p.ms).toISOString());
       }}
