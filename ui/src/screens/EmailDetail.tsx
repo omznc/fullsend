@@ -11,6 +11,7 @@ import {
 import {
   Badge,
   Button,
+  Checkbox,
   ButtonLink,
   ConfirmDialog,
   CopyButton,
@@ -1073,6 +1074,8 @@ function BodySection({
 }) {
   const [tab, setTab] = useState<PreviewTab>("html");
   const [width, setWidth] = useState<"desktop" | "mobile">("desktop");
+  // Off by default. See previewDoc.
+  const [remote, setRemote] = useState(false);
   const tabBar = useIndicator<HTMLDivElement>();
 
   const tabs: { value: PreviewTab; label: string }[] = [
@@ -1163,12 +1166,13 @@ function BodySection({
           title="Email preview"
           sandbox="allow-popups allow-popups-to-escape-sandbox"
           referrerPolicy="no-referrer"
-          srcDoc={previewDoc(data.html)}
+          srcDoc={previewDoc(data.html, remote)}
           className="mx-auto block h-[480px] w-full border-0 bg-white shadow-[0_0_0_1px_var(--line)] transition-[max-width] duration-[var(--dur-spring)] ease-[var(--spring)] motion-reduce:transition-none"
           style={{ maxWidth: px }}
         />
         <div className="mt-2 text-center font-mono text-[11px] text-fg3">
-          sandboxed frame · scripts and remote images blocked · {px} px
+          sandboxed frame · scripts blocked ·{" "}
+          {remote ? "remote images loaded" : "remote images blocked"} · {px} px
         </div>
       </div>
     );
@@ -1215,38 +1219,43 @@ function BodySection({
           ))}
         </div>
         {tab === "html" && !empty && data?.html && (
-          <div
-            role="radiogroup"
-            aria-label="Preview width"
-            onKeyDown={rovingKeys("radio", (i) =>
-              setWidth(i === 0 ? "desktop" : "mobile"),
-            )}
-            className="flex gap-0.5 pr-3 md:pr-0"
-          >
-            {(
-              [
-                ["desktop", "Desktop", "device-laptop"],
-                ["mobile", "Mobile", "device-phone"],
-              ] as const
-            ).map(([value, label, icon]) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={width === value}
-                tabIndex={width === value ? 0 : -1}
-                aria-label={label}
-                onClick={() => setWidth(value)}
-                className={cx(
-                  "press-icon grid size-9 place-items-center border bg-transparent max-md:size-11",
-                  width === value
-                    ? "border-fg2 text-fg"
-                    : "border-line2 text-fg3",
-                )}
-              >
-                <Icon name={icon} size={16} />
-              </button>
-            ))}
+          <div className="flex items-center gap-4 pr-3 pl-2 md:pr-0 md:pl-0">
+            <Checkbox checked={remote} onChange={setRemote}>
+              <span className="font-mono text-[12px]">load remote images</span>
+            </Checkbox>
+            <div
+              role="radiogroup"
+              aria-label="Preview width"
+              onKeyDown={rovingKeys("radio", (i) =>
+                setWidth(i === 0 ? "desktop" : "mobile"),
+              )}
+              className="flex gap-0.5"
+            >
+              {(
+                [
+                  ["desktop", "Desktop", "device-laptop"],
+                  ["mobile", "Mobile", "device-phone"],
+                ] as const
+              ).map(([value, label, icon]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={width === value}
+                  tabIndex={width === value ? 0 : -1}
+                  aria-label={label}
+                  onClick={() => setWidth(value)}
+                  className={cx(
+                    "press-icon grid size-9 place-items-center border bg-transparent max-md:size-11",
+                    width === value
+                      ? "border-fg2 text-fg"
+                      : "border-line2 text-fg3",
+                  )}
+                >
+                  <Icon name={icon} size={16} />
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -1261,11 +1270,16 @@ function BodySection({
   );
 }
 
-// The frame blocks scripts, remote images and remote styles. A remote
-// image would make an open event for the owner's own view.
-function previewDoc(html: string): string {
-  const csp =
-    "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:";
+// The frame blocks scripts and remote styles. It blocks remote images by
+// default. The stored body has no fullsend tracking pixel: the pixel is
+// added at send time (worker/src/send/consumer.ts). A remote image can
+// still tell a third-party sender that the owner looked at the email, so
+// the default stays off. The owner can turn remote images on. The sandbox
+// stays in both modes.
+function previewDoc(html: string, remote: boolean): string {
+  const img = remote ? "img-src data: https:" : "img-src data:";
+
+  const csp = `default-src 'none'; ${img}; style-src 'unsafe-inline'; font-src data:`;
 
   return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${csp}"><base target="_blank">${html}`;
 }
