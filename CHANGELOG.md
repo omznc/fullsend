@@ -70,6 +70,8 @@ in Settings and in `GET /health`.
 
 - Add the new endpoints, the differences from Resend and the Access path
   sync to the README.
+- Add `openapi.json` (OpenAPI 3.1) for each public route. The Worker does
+  not serve it. A test fails when a public route and the file differ.
 - Add the Webhooks section: the event types, the signature headers and the
   retry schedule.
 - Change the "Update a deploy" commands. They keep a value of `OLD` that
@@ -80,6 +82,10 @@ in Settings and in `GET /health`.
 
 - The setup wizard pauses the domain verify loop in a hidden tab.
 - CI runs `wrangler deploy --dry-run` after the build.
+- Add a Playwright smoke test for the dashboard (`pnpm test:e2e`). A
+  separate `e2e` job in CI runs it. `pnpm test` does not.
+- Fix a flaky pipeline test. It wrote a setting with raw SQL and read a
+  stale settings cache.
 - Add the Renovate configuration. Renovate does nothing until the owner
   installs the Renovate app.
 

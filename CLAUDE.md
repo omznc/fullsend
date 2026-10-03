@@ -36,6 +36,7 @@ pnpm dev              # the Worker (wrangler dev) on :8787, serves ui/dist
 pnpm dev:ui           # the Vite dev server on :5173, proxies to :8787
 pnpm typecheck        # pnpm -r typecheck (tsc --noEmit in each workspace)
 pnpm test             # pnpm -r test (only worker has tests: vitest run)
+pnpm test:e2e         # the Playwright smoke test of the dashboard (ui/e2e)
 pnpm lint             # oxlint --fix && oxfmt
 pnpm lint:ci          # oxlint && oxfmt --check (what CI runs)
 pnpm format           # oxfmt
@@ -44,11 +45,14 @@ pnpm run db:migrate   # applies worker/migrations to the REMOTE D1 database
 
 To check your work, run `pnpm lint:ci`, `pnpm typecheck` and `pnpm build`.
 Run `pnpm test` too when you change `worker/`. All four are at zero errors
-now. Keep them there.
+now. Keep them there. `pnpm test:e2e` is not part of the four checks. Run it
+when you change `ui/`. It needs a Chromium browser: run
+`pnpm --filter @fullsend/ui exec playwright install chromium` one time.
 
 CI (`.github/workflows/ci.yml`) runs on a push to `main` and on each pull
 request: `pnpm install --frozen-lockfile`, `pnpm lint:ci`, `pnpm build`,
-`pnpm typecheck` and `pnpm test`, on Node 24. CI never deploys.
+`pnpm typecheck` and `pnpm test`, on Node 24. A second job, `e2e`, installs
+Chromium and runs `pnpm test:e2e`. CI never deploys.
 
 `pnpm dev` serves the UI from `ui/dist`. Run `pnpm build` first, or use
 `pnpm dev:ui` for hot reload. Copy `.dev.vars.example` to `.dev.vars` and set
