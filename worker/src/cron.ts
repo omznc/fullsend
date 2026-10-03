@@ -2,33 +2,51 @@ import { ensureSubscription, listDomains, syncDomain } from "./domains/service";
 import type { Env, SendMessage } from "./env";
 import { hasToken } from "./lib/cloudflare";
 import { getSettings } from "./lib/settings";
-import { logSystemEvent } from "./lib/system-events";
+import { errorText, logSystemEvent } from "./lib/system-events";
 import { DAY } from "./lib/time";
 import { type EmailDbRow, fail, rowToEmail } from "./send/consumer";
 
-// One cron runs each minute. It sends due scheduled emails each minute,
-// sweeps the emails that stay in the send queue, syncs the domains each 15 minutes, and deletes old data each day.
+// One cron runs each minute. Each minute it sends due scheduled emails
+// and sweeps the emails that stay in the send queue. It syncs the
+// domains each 15 minutes. It deletes old data each hour.
 export async function runCron(
   controller: ScheduledController,
   env: Env,
 ): Promise<void> {
   const at = new Date(controller.scheduledTime);
 
-  const jobs: Promise<unknown>[] = [
-    dispatchScheduled(env, at.getTime()).then(() =>
-      sweepStuck(env, at.getTime()),
-    ),
-  ];
+  const jobs = new Map<string, Promise<unknown>>([
+    [
+      "dispatch",
+      dispatchScheduled(env, at.getTime()).then(() =>
+        sweepStuck(env, at.getTime()),
+      ),
+    ],
+  ]);
 
-  if (at.getUTCMinutes() % 15 === 0) jobs.push(syncDomains(env));
+  if (at.getUTCMinutes() % 15 === 0) jobs.set("domains", syncDomains(env));
 
-  if (at.getUTCHours() === 3 && at.getUTCMinutes() === 0)
-    jobs.push(retention(env, at.getTime()));
-  const results = await Promise.allSettled(jobs);
+  if (at.getUTCMinutes() === RETENTION_MINUTE)
+    jobs.set("retention", retention(env, at.getTime()));
 
-  for (const r of results)
-    if (r.status === "rejected") console.error("cron job failed", r.reason);
+  const results = await Promise.allSettled(jobs.values());
+  const names = [...jobs.keys()];
+
+  for (const [i, r] of results.entries()) {
+    if (r.status === "rejected") {
+      await logSystemEvent(env, {
+        level: "error",
+        source: "cron",
+        message: "A cron job failed.",
+        detail: { job: names[i] ?? "", error: errorText(r.reason) },
+      });
+    }
+  }
 }
+
+// Retention runs at this minute of each hour. A run that stops at its
+// budget leaves work for the next hour.
+const RETENTION_MINUTE = 7;
 
 // Puts the scheduled emails that are due in the next minute on the send
 // queue, with a delay to their exact time.
@@ -59,7 +77,15 @@ export async function dispatchScheduled(
       sent += chunk.length;
     } catch (err) {
       // Clear the mark, so the next run puts these emails on the queue.
-      console.error("dispatch failed", err);
+      await logSystemEvent(env, {
+        level: "error",
+        source: "cron",
+        message: "The cron could not put scheduled emails on the send queue.",
+        detail: {
+          ids: chunk.map((m) => m.body.emailId),
+          error: errorText(err),
+        },
+      });
       await env.DB.batch(
         chunk.map((m) =>
           env.DB.prepare(
@@ -147,12 +173,19 @@ async function enqueueAgain(
         message: "The sweep could not put emails on the send queue.",
         detail: {
           ids: chunk.map((r) => r.id),
-          error: err instanceof Error ? err.message : String(err),
+          error: errorText(err),
         },
       });
       await env.DB.batch(
         chunk.map((r) => env.DB.prepare(undo).bind(r.id)),
-      ).catch((e) => console.error("sweep undo failed", e));
+      ).catch((e) =>
+        logSystemEvent(env, {
+          level: "error",
+          source: "sweep",
+          message: "The sweep could not undo its mark after a queue failure.",
+          detail: { ids: chunk.map((r) => r.id), error: errorText(e) },
+        }),
+      );
     }
   }
 
@@ -294,7 +327,12 @@ async function failAll(
       await fail(env, rowToEmail(row), reason);
       ids.push(row.id);
     } catch (err) {
-      console.error("sweep fail error", row.id, err);
+      await logSystemEvent(env, {
+        level: "error",
+        source: "sweep",
+        message: "The sweep could not record a failed email.",
+        detail: { id: row.id, error: errorText(err) },
+      });
     }
   }
 
@@ -319,7 +357,12 @@ async function syncDomains(env: Env): Promise<void> {
 
       if (!synced.eventSubscriptionId) await ensureSubscription(env, synced);
     } catch (err) {
-      console.warn("domain sync failed", row.name, err);
+      await logSystemEvent(env, {
+        level: "warn",
+        source: "cron",
+        message: "A domain sync failed.",
+        detail: { domain: row.name, error: errorText(err) },
+      });
     }
   }
 }
@@ -328,47 +371,180 @@ async function syncDomains(env: Env): Promise<void> {
 // be older than the retention period.
 const PENDING = "('queued', 'scheduled')";
 
-export async function retention(env: Env, now = Date.now()): Promise<void> {
+// Retention keeps the system events and the API request log this long.
+export const SYSTEM_EVENTS_KEEP = 30 * DAY;
+
+export const API_REQUESTS_KEEP = 14 * DAY;
+
+// One round handles this many rows. A query with a list of ids reads the
+// list as one JSON text, because D1 allows 100 bound values at most.
+const CHUNK = 500;
+
+// Each step runs this many rounds at most, and the whole run stops at the
+// time budget. The next run does the rest.
+const MAX_ROUNDS = 20;
+
+const TIME_BUDGET_MS = 20_000;
+
+export interface RetentionResult {
+  rounds: number;
+  // False when a step stopped at its budget and rows can remain.
+  complete: boolean;
+}
+
+interface BodyRow {
+  id: string;
+  body_key: string | null;
+}
+
+export async function retention(
+  env: Env,
+  now = Date.now(),
+): Promise<RetentionResult> {
   const s = await getSettings(env);
   const bodyCutoff = now - Number(s.body_retention_days) * DAY;
   const rowCutoff = now - Number(s.row_retention_days) * DAY;
+  const deadline = Date.now() + TIME_BUDGET_MS;
+  const result: RetentionResult = { rounds: 0, complete: true };
 
-  for (let round = 0; round < 20; round++) {
+  // Runs a round again while it has full chunks. A round returns the
+  // number of rows that it handled.
+  const loop = async (round: () => Promise<number>) => {
+    for (let i = 0; i < MAX_ROUNDS; i++) {
+      if (Date.now() >= deadline) {
+        result.complete = false;
+
+        return;
+      }
+
+      result.rounds++;
+
+      if ((await round()) < CHUNK) return;
+    }
+
+    result.complete = false;
+  };
+
+  const step = async (name: string, round: () => Promise<number>) => {
+    try {
+      await loop(round);
+    } catch (err) {
+      // A failed step does not stop the other steps.
+      result.complete = false;
+      await logSystemEvent(env, {
+        level: "error",
+        source: "cron",
+        message: "A retention step failed.",
+        detail: { step: name, error: errorText(err) },
+      });
+    }
+  };
+
+  // The R2 bodies of the old emails go first. A row that stays after its
+  // body is gone is safe: the body is missing, not the row.
+  await step("bodies", async () => {
     const { results } = await env.DB.prepare(
       `SELECT id, body_key FROM emails WHERE body_key IS NOT NULL AND created_at < ?
-       AND status NOT IN ${PENDING} LIMIT 500`,
+       AND status NOT IN ${PENDING} LIMIT ${CHUNK}`,
     )
       .bind(bodyCutoff)
-      .all<{ id: string; body_key: string }>();
+      .all<BodyRow>();
 
-    if (!results.length) break;
-    await env.BODIES.delete(results.map((r) => r.body_key));
-    await env.DB.batch(
-      results.map((r) =>
-        env.DB.prepare("UPDATE emails SET body_key = NULL WHERE id = ?").bind(
-          r.id,
-        ),
-      ),
-    );
-  }
+    await deleteBodies(env, results);
 
-  await env.DB.batch([
-    env.DB.prepare(
-      `DELETE FROM email_events WHERE email_id IN (
-         SELECT id FROM emails WHERE created_at < ? AND status NOT IN ${PENDING}
-       )`,
-    ).bind(rowCutoff),
-    env.DB.prepare(
-      `DELETE FROM emails WHERE created_at < ? AND status NOT IN ${PENDING}`,
-    ).bind(rowCutoff),
-    env.DB.prepare("DELETE FROM webhook_deliveries WHERE created_at < ?").bind(
-      rowCutoff,
-    ),
-    env.DB.prepare("DELETE FROM idempotency_keys WHERE created_at < ?").bind(
-      now - DAY,
-    ),
-    env.DB.prepare(
-      "DELETE FROM auth_attempts WHERE updated_at < ?1 AND locked_until < ?2",
-    ).bind(now - DAY, now),
-  ]);
+    if (results.length) {
+      await env.DB.prepare(
+        "UPDATE emails SET body_key = NULL WHERE id IN (SELECT value FROM json_each(?))",
+      )
+        .bind(JSON.stringify(results.map((r) => r.id)))
+        .run();
+    }
+
+    return results.length;
+  });
+
+  // The R2 bodies go before their rows. Without the rows, nothing
+  // points to the bodies, and they stay in R2 for ever.
+  await step("emails", async () => {
+    const { results } = await env.DB.prepare(
+      `SELECT id, body_key FROM emails WHERE created_at < ?
+       AND status NOT IN ${PENDING} LIMIT ${CHUNK}`,
+    )
+      .bind(rowCutoff)
+      .all<BodyRow>();
+
+    if (!results.length) return 0;
+
+    await deleteBodies(env, results);
+
+    const ids = JSON.stringify(results.map((r) => r.id));
+
+    await env.DB.batch([
+      env.DB.prepare(
+        "DELETE FROM email_events WHERE email_id IN (SELECT value FROM json_each(?))",
+      ).bind(ids),
+      env.DB.prepare(
+        "DELETE FROM emails WHERE id IN (SELECT value FROM json_each(?))",
+      ).bind(ids),
+    ]);
+
+    return results.length;
+  });
+
+  const oldRows = (
+    name: string,
+    table: string,
+    where: string,
+    ...bind: number[]
+  ) =>
+    step(name, async () => {
+      const done = await env.DB.prepare(
+        `DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${where} LIMIT ${CHUNK})`,
+      )
+        .bind(...bind)
+        .run();
+
+      return done.meta.changes;
+    });
+
+  await oldRows(
+    "webhook_deliveries",
+    "webhook_deliveries",
+    "created_at < ?",
+    rowCutoff,
+  );
+  await oldRows(
+    "idempotency_keys",
+    "idempotency_keys",
+    "created_at < ?",
+    now - DAY,
+  );
+  await oldRows(
+    "auth_attempts",
+    "auth_attempts",
+    "updated_at < ?1 AND locked_until < ?2",
+    now - DAY,
+    now,
+  );
+  await oldRows(
+    "system_events",
+    "system_events",
+    "created_at < ?",
+    now - SYSTEM_EVENTS_KEEP,
+  );
+  await oldRows(
+    "api_requests",
+    "api_requests",
+    "created_at < ?",
+    now - API_REQUESTS_KEEP,
+  );
+
+  return result;
+}
+
+// Deletes the R2 objects of the rows that have a body key.
+async function deleteBodies(env: Env, rows: BodyRow[]): Promise<void> {
+  const keys = rows.flatMap((r) => (r.body_key ? [r.body_key] : []));
+
+  if (keys.length) await env.BODIES.delete(keys);
 }

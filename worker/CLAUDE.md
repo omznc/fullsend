@@ -19,9 +19,12 @@ first.
   delivery and Svix signatures. `src/tracking/`: the open pixel and the
   click redirect. `src/domains/`: domains through the Cloudflare API
   (`src/lib/cloudflare.ts`).
-- `src/cron.ts`: one cron each minute. It sends due scheduled emails and sweeps
-  stuck emails each minute, syncs the domains each 15 minutes, and runs retention at 03:00
-  UTC.
+- `src/cron.ts`: one cron each minute. It sends due scheduled emails and
+  sweeps stuck emails each minute, syncs the domains each 15 minutes, and
+  runs retention at minute 7 of each hour. Retention works in chunks of 500
+  rows with a time budget, so a run can stop and the next hour finishes it.
+  It deletes the R2 bodies before the rows. A failure of a job goes to
+  `system_events` through `logSystemEvent` (`src/lib/system-events.ts`).
 - `scripts/create-key.ts`: makes an API key and its SQL without the
   dashboard. Run it with `node`.
 
