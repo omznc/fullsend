@@ -10,6 +10,7 @@ export const PUBLIC_PATHS: readonly string[] = [
   "/domains",
   "/api-keys",
   "/webhooks",
+  "/suppressions",
   "/t",
   "/health",
 ];

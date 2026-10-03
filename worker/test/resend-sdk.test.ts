@@ -1,11 +1,30 @@
 import { env } from "cloudflare:workers";
-import { Resend, type WebhookEvent } from "resend";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  Resend,
+  type SuppressionAddedEvent,
+  type SuppressionRemovedEvent,
+  type WebhookEvent,
+} from "resend";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { ACCEPTED_WEBHOOK_EVENTS, WEBHOOK_EVENTS } from "../src/events/record";
+import { parseJsonText } from "../src/lib/json";
 import { addDomain, BASE, newKey, routeFetchToWorker } from "./helpers";
 
 // Runs the official resend SDK against the Worker, with no patch: only
 // the base URL and the key change.
+
+const suppressionEvent = z.object({
+  type: z.enum(["suppression.added", "suppression.removed"]),
+  created_at: z.string(),
+  data: z.object({
+    id: z.string(),
+    email: z.string(),
+    origin: z.enum(["bounce", "complaint", "manual"]),
+    source_id: z.string().nullable(),
+    created_at: z.string(),
+  }),
+});
 
 let restore: () => void;
 
@@ -583,5 +602,242 @@ describe("webhook event types", () => {
       "contact.created",
       "domain.updated",
     ]);
+  });
+});
+
+describe("suppressions", () => {
+  it("adds, reads, lists and removes a suppression", async () => {
+    const email = "Sup+Tag@Example.com";
+    const added = await resend.suppressions.add({ email });
+
+    expect(added.error).toBeNull();
+    expect(added.data).toMatchObject({ object: "suppression" });
+    const id = added.data!.id;
+
+    // Adding again keeps the same id.
+    expect((await resend.suppressions.add({ email })).data?.id).toBe(id);
+
+    const byId = await resend.suppressions.get(id);
+
+    expect(byId.data).toMatchObject({
+      object: "suppression",
+      id,
+      email: "sup+tag@example.com",
+      origin: "manual",
+      source_id: null,
+    });
+
+    // The SDK encodes the `+` of the address.
+    const byEmail = await resend.suppressions.get("sup+tag@example.com");
+    expect(byEmail.data?.id).toBe(id);
+
+    const manual = await resend.suppressions.list({ origin: "manual" });
+    expect(manual.data?.object).toBe("list");
+    expect(manual.data?.data.some((s) => s.id === id)).toBe(true);
+    expect(manual.data?.data[0]).not.toHaveProperty("object");
+
+    const bounce = await resend.suppressions.list({ origin: "bounce" });
+    expect(bounce.data?.data.some((s) => s.id === id)).toBe(false);
+
+    const removed = await resend.suppressions.remove("sup+tag@example.com");
+    expect(removed.data).toEqual({ object: "suppression", id, deleted: true });
+
+    const gone = await resend.suppressions.get(id);
+    expect(gone.error).toMatchObject({ statusCode: 404, name: "not_found" });
+    const again = await resend.suppressions.remove(id);
+    expect(again.error).toMatchObject({ statusCode: 404, name: "not_found" });
+  });
+
+  it("maps a bounce and a complaint to their origin", async () => {
+    await env.DB.prepare(
+      `INSERT INTO suppressions (address, reason, source, email_id, created_at)
+       VALUES ('hard@example.net', 'hard_bounce', 'cloudflare_event', 'email-1', 5),
+              ('spam@example.net', 'complaint', 'cloudflare_event', NULL, 6)`,
+    ).run();
+
+    const hard = await resend.suppressions.get("hard@example.net");
+    expect(hard.data).toMatchObject({ origin: "bounce", source_id: "email-1" });
+
+    const spam = await resend.suppressions.get("spam@example.net");
+    expect(spam.data).toMatchObject({ origin: "complaint", source_id: null });
+
+    const list = await resend.suppressions.list({ origin: "complaint" });
+    expect(list.data?.data.map((s) => s.email)).toContain("spam@example.net");
+  });
+
+  it("pages the list", async () => {
+    const emails = ["pg1", "pg2", "pg3"].map((n) => `${n}@example.org`);
+    const batch = await resend.suppressions.batch.add({ emails });
+    expect(batch.error).toBeNull();
+
+    const first = await resend.suppressions.list({ limit: 2 });
+    expect(first.data?.data).toHaveLength(2);
+    expect(first.data?.has_more).toBe(true);
+
+    const seen: string[] = [];
+    let after: string | undefined;
+
+    for (let i = 0; i < 20; i++) {
+      const page = await resend.suppressions.list(
+        after ? { limit: 2, after } : { limit: 2 },
+      );
+
+      seen.push(...page.data!.data.map((s) => s.email));
+
+      if (!page.data!.has_more) break;
+      after = page.data!.data.at(-1)!.id;
+    }
+
+    for (const e of emails) expect(seen).toContain(e);
+    expect(new Set(seen).size).toBe(seen.length);
+
+    const bad = await resend.suppressions.list({ after: "nope" });
+    expect(bad.error).toMatchObject({
+      statusCode: 422,
+      name: "invalid_parameter",
+    });
+
+    const origin = await resend.suppressions.list({
+      // SAFETY: the test sends a value that the SDK type does not allow.
+      origin: "other" as "manual",
+    });
+
+    expect(origin.error).toMatchObject({
+      statusCode: 422,
+      name: "invalid_parameter",
+    });
+  });
+
+  it("adds and removes a batch", async () => {
+    const emails = ["b1@example.org", "b2@example.org", "b2@example.org"];
+    const added = await resend.suppressions.batch.add({ emails });
+
+    expect(added.data?.data).toHaveLength(2);
+    expect(added.data?.data[0]).toMatchObject({ object: "suppression" });
+    const ids = added.data!.data.map((s) => s.id);
+
+    const byEmail = await resend.suppressions.batch.remove({
+      emails: ["b1@example.org", "missing@example.org"],
+    });
+
+    expect(byEmail.data?.data).toEqual([
+      { object: "suppression", id: ids[0], deleted: true },
+      {
+        object: "suppression",
+        id: expect.any(String),
+        deleted: false,
+      },
+    ]);
+
+    const byId = await resend.suppressions.batch.remove({
+      ids: [ids[1]!, "not-an-id"],
+    });
+
+    expect(byId.data?.data).toEqual([
+      { object: "suppression", id: ids[1], deleted: true },
+      { object: "suppression", id: "not-an-id", deleted: false },
+    ]);
+
+    expect((await resend.suppressions.get(ids[1]!)).error?.statusCode).toBe(
+      404,
+    );
+  });
+
+  it("rejects bad input", async () => {
+    // @ts-expect-error: the test leaves out the required field.
+    const missing = await resend.suppressions.add({});
+    expect(missing.error).toMatchObject({
+      statusCode: 422,
+      name: "missing_required_field",
+    });
+
+    const bad = await resend.suppressions.add({ email: "not an email" });
+    expect(bad.error).toMatchObject({
+      statusCode: 422,
+      name: "validation_error",
+    });
+
+    const empty = await resend.suppressions.batch.add({ emails: [] });
+    expect(empty.error).toMatchObject({ statusCode: 422 });
+
+    const many = await resend.suppressions.batch.add({
+      emails: Array.from({ length: 101 }, (_, i) => `m${i}@example.org`),
+    });
+
+    expect(many.error).toMatchObject({
+      statusCode: 422,
+      name: "validation_error",
+    });
+  });
+
+  it("limits a sending key", async () => {
+    const { token } = await newKey({ permission: "sending_access" });
+    const sender = new Resend(token, { baseUrl: BASE });
+    const list = await sender.suppressions.list();
+
+    expect(list.error).toMatchObject({
+      statusCode: 401,
+      name: "restricted_api_key",
+    });
+  });
+
+  it("sends suppression events to a webhook", async () => {
+    await resend.webhooks.create({
+      endpoint: "https://hooks.example.com/sup",
+      events: ["suppression.added", "suppression.removed"],
+    });
+
+    const queue = vi
+      .spyOn(env.HOOKS_QUEUE, "sendBatch")
+      .mockResolvedValue({
+        metadata: { metrics: { backlogCount: 0, backlogBytes: 0 } },
+      });
+
+    // The events that the Worker put on the queue. The schema is assigned
+    // to the SDK types, so a change of an SDK type breaks the compile.
+    const types = () =>
+      queue.mock.calls.flatMap(([batch]) =>
+        [...batch].flatMap((m) => {
+          const body = m.body.body;
+
+          if (!body) return [];
+
+          const event: SuppressionAddedEvent | SuppressionRemovedEvent =
+            suppressionEvent.parse(parseJsonText(body));
+
+          return [event];
+        }),
+      );
+
+    try {
+      const { data } = await resend.suppressions.add({
+        email: "evt@example.org",
+      });
+      await resend.suppressions.add({ email: "evt@example.org" });
+      expect(types().map((e) => e.type)).toEqual(["suppression.added"]);
+
+      expect(types()[0]!.data).toMatchObject({
+        id: data!.id,
+        email: "evt@example.org",
+        origin: "manual",
+        source_id: null,
+      });
+
+      await resend.suppressions.remove(data!.id);
+      await resend.suppressions.remove(data!.id);
+      expect(types().map((e) => e.type)).toEqual([
+        "suppression.added",
+        "suppression.removed",
+      ]);
+
+      await resend.suppressions.batch.add({
+        emails: ["evt@example.org", "evt2@example.org"],
+      });
+
+      // The batch adds two addresses. The first one is new again.
+      expect(types()).toHaveLength(4);
+    } finally {
+      queue.mockRestore();
+    }
   });
 });

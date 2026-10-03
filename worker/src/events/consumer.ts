@@ -3,6 +3,7 @@ import type { EmailStatus } from "../db/schema";
 import type { Env } from "../env";
 import { normalize } from "../lib/address";
 import { errorText, logSystemEvent } from "../lib/system-events";
+import { addSuppressions } from "../suppressions/service";
 import { type Hook, loadHooks, recordEvent } from "./record";
 
 // An Email Sending event from the Queues event subscription. The schema
@@ -208,21 +209,22 @@ export async function handleEvent(
 
   // A hard bounce or a complaint adds the address to the suppression list.
   // The insert does nothing for an address that is on the list, so a
-  // duplicate event does no harm.
+  // duplicate event does no harm and sends no suppression.added event.
   const hard = type === "bounced" && p.bounce?.type === "hard";
 
   if (p.recipient && (hard || type === "complained")) {
-    await env.DB.prepare(
-      `INSERT INTO suppressions (address, reason, source, email_id, created_at)
-       VALUES (?, ?, 'cloudflare_event', ?, ?) ON CONFLICT (address) DO NOTHING`,
-    )
-      .bind(
-        normalize(p.recipient),
-        hard ? "hard_bounce" : "complaint",
-        email.id,
-        Date.now(),
-      )
-      .run();
+    await addSuppressions(
+      env,
+      [
+        {
+          address: normalize(p.recipient),
+          reason: hard ? "hard_bounce" : "complaint",
+          source: "cloudflare_event",
+          emailId: email.id,
+        },
+      ],
+      hooks,
+    );
   }
 
   return true;

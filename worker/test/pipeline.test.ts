@@ -4,7 +4,9 @@ import {
   getQueueResult,
 } from "cloudflare:test";
 import { env } from "cloudflare:workers";
+import type { SuppressionAddedEvent } from "resend";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   dispatchScheduled,
   retention,
@@ -13,6 +15,7 @@ import {
 } from "../src/cron";
 import type { Env, HookMessage, SendMessage } from "../src/env";
 import { handleEvent, handleEventsBatch } from "../src/events/consumer";
+import { parseJsonText } from "../src/lib/json";
 import { logSystemEvent } from "../src/lib/system-events";
 import { handleSendBatch } from "../src/send/consumer";
 import { createEmail } from "../src/send/create";
@@ -21,6 +24,19 @@ import { signLink } from "../src/tracking/sign";
 import { deliver, handleHooksBatch } from "../src/webhooks/deliver";
 import { createWebhook } from "../src/webhooks/service";
 import { addDomain, call } from "./helpers";
+
+// The suppression.added body. The type of the SDK checks the schema.
+const suppressionAdded = z.object({
+  type: z.literal("suppression.added"),
+  created_at: z.string(),
+  data: z.object({
+    id: z.string(),
+    email: z.string(),
+    origin: z.enum(["bounce", "complaint", "manual"]),
+    source_id: z.string().nullable(),
+    created_at: z.string(),
+  }),
+});
 
 // The reply of a stub queue. fullsend does not read it.
 const SENT: QueueSendBatchResponse = {
@@ -404,6 +420,78 @@ describe("events consumer", () => {
     await handleEvent(env, event);
     expect(hooks).not.toHaveBeenCalled();
     hooks.mockRestore();
+  });
+
+  it("sends suppression.added once for a hard bounce", async () => {
+    await createWebhook(env, {
+      endpoint: "https://hooks.example.com/suppression",
+      events: ["suppression.added"],
+    });
+
+    const { id } = await createEmail(
+      env,
+      {
+        from: "a@send.example.com",
+        to: "sup-hook@example.net",
+        subject: "s",
+        text: "t",
+      },
+      { apiKeyId: "test" },
+    );
+
+    await runSend(
+      fakeEnv(async () => ({ messageId: "cf-sup" })),
+      id,
+    );
+
+    const bounce = (eventId: string) => ({
+      type: "cf.email.sending.message.bounced",
+      payload: {
+        eventId,
+        messageId: "cf-sup",
+        recipient: "Sup-Hook@example.net",
+        bounce: { type: "hard" as const, reason: "550" },
+      },
+    });
+
+    const hooks = vi
+      .spyOn(env.HOOKS_QUEUE, "sendBatch")
+      .mockResolvedValue(SENT);
+
+    try {
+      await handleEvent(env, bounce("e-sup-1"));
+
+      // A message of an email event has no body. Only the suppression
+      // event has one.
+      const bodies = hooks.mock.calls.flatMap(([batch]) =>
+        [...batch].flatMap((m) => m.body.body ?? []),
+      );
+
+      expect(bodies).toHaveLength(1);
+
+      const event: SuppressionAddedEvent = suppressionAdded.parse(
+        parseJsonText(bodies[0]!),
+      );
+
+      expect(event.data).toMatchObject({
+        email: "sup-hook@example.net",
+        origin: "bounce",
+        source_id: id,
+      });
+
+      // Another event for the same address adds nothing and sends no
+      // suppression event.
+      hooks.mockClear();
+      await handleEvent(env, bounce("e-sup-2"));
+
+      expect(
+        hooks.mock.calls.flatMap(([batch]) =>
+          [...batch].flatMap((m) => m.body.body ?? []),
+        ),
+      ).toEqual([]);
+    } finally {
+      hooks.mockRestore();
+    }
   });
 
   it("waits for an unknown message id", async () => {

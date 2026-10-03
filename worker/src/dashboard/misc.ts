@@ -18,6 +18,7 @@ import {
 import { DAY, iso, isoOrNull } from "../lib/time";
 import { PUBLIC_PATHS } from "../public-paths";
 import { parseAddressColumn } from "../send/consumer";
+import { addSuppressions, removeSuppressions } from "../suppressions/service";
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
 import { dashDomain } from "./domains";
 import { FAILURES_SQL } from "./failures-sql";
@@ -298,20 +299,20 @@ miscRoutes.post("/suppressions", async (c) => {
 
   if (!isString(body.address) || !parseAddress(body.address))
     throw validation("Give a valid email address.");
-  await c.env.DB.prepare(
-    `INSERT INTO suppressions (address, reason, source, email_id, created_at) VALUES (?, 'manual', ?, NULL, ?)
-     ON CONFLICT (address) DO NOTHING`,
-  )
-    .bind(normalize(body.address), `dashboard:${c.get("identity")}`, Date.now())
-    .run();
+
+  await addSuppressions(c.env, [
+    {
+      address: normalize(body.address),
+      reason: "manual",
+      source: `dashboard:${c.get("identity")}`,
+    },
+  ]);
 
   return c.json({ ok: true });
 });
 
 miscRoutes.delete("/suppressions/:address", async (c) => {
-  await c.env.DB.prepare("DELETE FROM suppressions WHERE address = ?")
-    .bind(normalize(c.req.param("address")))
-    .run();
+  await removeSuppressions(c.env, [normalize(c.req.param("address"))]);
 
   return c.json({ ok: true });
 });

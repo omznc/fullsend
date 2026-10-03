@@ -3,6 +3,7 @@ import { apiKeysApi } from "./api/api-keys";
 import { rememberOrigin } from "./api/auth";
 import { domainsApi } from "./api/domains";
 import { emailsApi } from "./api/emails";
+import { suppressionsApi } from "./api/suppressions";
 import { webhooksApi } from "./api/webhooks";
 import { runCron } from "./cron";
 import {
@@ -74,6 +75,8 @@ app.route("/domains", domainsApi);
 app.route("/api-keys", apiKeysApi);
 
 app.route("/webhooks", webhooksApi);
+
+app.route("/suppressions", suppressionsApi);
 
 for (const prefix of PUBLIC_PATHS) {
   app.all(`${prefix}/*`, (c) => {
