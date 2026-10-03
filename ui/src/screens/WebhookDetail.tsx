@@ -4,6 +4,8 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  Dialog,
+  DialogFooter,
   EmptyState,
   ErrorState,
   Icon,
@@ -25,7 +27,12 @@ import { percent } from "../lib/format";
 import { useApi, useNow, useTitle } from "../lib/hooks";
 import { isJsonObject, isString, parseJson } from "../lib/json";
 import { Link, navigate, useQuery } from "../lib/router";
-import { SecretDialog, shortEvent } from "./webhooks/shared";
+import {
+  checkEndpoint,
+  EndpointFields,
+  SecretDialog,
+  shortEvent,
+} from "./webhooks/shared";
 
 const TEMPLATE = "170px 170px 110px 100px 90px minmax(0,1fr) 40px";
 
@@ -94,6 +101,7 @@ export function WebhookDetail({ id }: { id: string }) {
   const [toggling, setToggling] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [rotating, setRotating] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [newSecret, setNewSecret] = useState<string | null>(null);
 
   const w = hook.data;
@@ -247,6 +255,14 @@ export function WebhookDetail({ id }: { id: string }) {
           >
             {w?.enabled === false ? "enable" : "disable"}
           </Button>
+          <Button
+            icon="edit"
+            className="max-md:h-11"
+            disabled={!w}
+            onClick={() => setEditing(true)}
+          >
+            edit
+          </Button>
           <IconButton
             icon="trash"
             label="Delete endpoint"
@@ -393,6 +409,25 @@ export function WebhookDetail({ id }: { id: string }) {
         )}
       </SidePanel>
 
+      <Dialog
+        open={editing}
+        onClose={() => setEditing(false)}
+        title="Edit endpoint"
+        width={640}
+      >
+        {w && (
+          <EditForm
+            id={id}
+            hook={w}
+            onCancel={() => setEditing(false)}
+            onSaved={() => {
+              setEditing(false);
+              toast({ tone: "success", message: "Endpoint saved." });
+              void hook.reload();
+            }}
+          />
+        )}
+      </Dialog>
       <ConfirmDialog
         open={deleting}
         title="Delete this endpoint?"
@@ -432,6 +467,77 @@ export function WebhookDetail({ id }: { id: string }) {
         onClose={() => setNewSecret(null)}
       />
     </>
+  );
+}
+
+// Changes the URL and the events. The signing secret does not change.
+function EditForm({
+  id,
+  hook,
+  onCancel,
+  onSaved,
+}: {
+  id: string;
+  hook: Webhook;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [endpoint, setEndpoint] = useState(hook.endpoint);
+  const [picked, setPicked] = useState(hook.events);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const check = checkEndpoint(endpoint);
+  const ready = endpoint.trim() !== "" && !check.error && picked.length > 0;
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+
+    try {
+      await api(`/webhooks/${id}`, {
+        method: "PATCH",
+        body: { endpoint: endpoint.trim(), events: picked },
+      });
+      onSaved();
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="flex flex-col gap-3.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+
+        if (ready) void submit();
+      }}
+    >
+      <EndpointFields
+        all={hook.available_events ?? hook.events}
+        endpoint={endpoint}
+        picked={picked}
+        onEndpoint={setEndpoint}
+        onPicked={setPicked}
+      />
+      <span className="text-[12.5px] text-fg3">
+        The signing secret does not change.
+      </span>
+      {error && <Notice tone="red">{error}</Notice>}
+      <DialogFooter>
+        <Button onClick={onCancel}>cancel</Button>
+        <Button
+          type="submit"
+          variant="primary"
+          icon="check"
+          busy={busy}
+          disabled={!ready}
+        >
+          save
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
 

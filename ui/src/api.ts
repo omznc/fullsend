@@ -232,6 +232,8 @@ export interface Webhook {
   last_attempt_at: string | null;
   created_at: string;
   signing_secret?: string;
+  // Only the detail response. Each event that fullsend can send.
+  available_events?: string[];
 }
 
 export interface Delivery {

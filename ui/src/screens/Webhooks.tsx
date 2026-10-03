@@ -7,9 +7,7 @@ import {
   DialogFooter,
   EmptyState,
   ErrorState,
-  Field,
   Icon,
-  Input,
   Notice,
   PageHeader,
   RelTime,
@@ -22,7 +20,7 @@ import { percent } from "../lib/format";
 import { useApi, useTitle } from "../lib/hooks";
 import {
   checkEndpoint,
-  EventPicker,
+  EndpointFields,
   SecretDialog,
   shortEvent,
 } from "./webhooks/shared";
@@ -273,25 +271,13 @@ function AddForm({
         if (ready) void submit();
       }}
     >
-      <Field label="Endpoint URL" error={check.error}>
-        <Input
-          autoFocus
-          type="url"
-          value={endpoint}
-          invalid={Boolean(check.error)}
-          placeholder="https://api.example.com/hooks/email"
-          onChange={(e) => setEndpoint(e.target.value)}
-        />
-      </Field>
-      {check.warning && (
-        <Notice tone="amber" className="-mt-1.5">
-          {check.warning}
-        </Notice>
-      )}
-      <EventPicker all={events} value={picked} onChange={setPicked} />
-      {picked.length === 0 && (
-        <span className="text-[12.5px] text-fg3">Pick at least one event.</span>
-      )}
+      <EndpointFields
+        all={events}
+        endpoint={endpoint}
+        picked={picked}
+        onEndpoint={setEndpoint}
+        onPicked={setPicked}
+      />
       {error && <Notice tone="red">{error}</Notice>}
       <DialogFooter>
         <Button onClick={onCancel}>cancel</Button>

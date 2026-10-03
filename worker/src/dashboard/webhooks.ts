@@ -91,7 +91,11 @@ webhookRoutes.get("/:id", async (c) => {
   const w = await getWebhook(c.env, c.req.param("id"));
   const s = await stats(c.env);
 
-  return c.json({ ...dashWebhook(w, s.get(w.id)), signing_secret: w.secret });
+  return c.json({
+    ...dashWebhook(w, s.get(w.id)),
+    signing_secret: w.secret,
+    available_events: WEBHOOK_EVENTS,
+  });
 });
 
 webhookRoutes.patch("/:id", async (c) => {

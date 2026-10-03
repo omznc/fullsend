@@ -3,6 +3,9 @@ import {
   Checkbox,
   Dialog,
   DialogFooter,
+  Field,
+  Input,
+  Notice,
   SecretReveal,
 } from "../../components/ui";
 
@@ -110,6 +113,48 @@ export function EventPicker({
         </div>
       ))}
     </fieldset>
+  );
+}
+
+// The endpoint URL and the events: the fields of the add form and of the
+// edit dialog.
+export function EndpointFields({
+  all,
+  endpoint,
+  picked,
+  onEndpoint,
+  onPicked,
+}: {
+  all: string[];
+  endpoint: string;
+  picked: string[];
+  onEndpoint: (v: string) => void;
+  onPicked: (v: string[]) => void;
+}) {
+  const check = checkEndpoint(endpoint);
+
+  return (
+    <>
+      <Field label="Endpoint URL" error={check.error}>
+        <Input
+          autoFocus
+          type="url"
+          value={endpoint}
+          invalid={Boolean(check.error)}
+          placeholder="https://api.example.com/hooks/email"
+          onChange={(e) => onEndpoint(e.target.value)}
+        />
+      </Field>
+      {check.warning && (
+        <Notice tone="amber" className="-mt-1.5">
+          {check.warning}
+        </Notice>
+      )}
+      <EventPicker all={all} value={picked} onChange={onPicked} />
+      {picked.length === 0 && (
+        <span className="text-[12.5px] text-fg3">Pick at least one event.</span>
+      )}
+    </>
   );
 }
 
