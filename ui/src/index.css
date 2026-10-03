@@ -152,7 +152,7 @@
   input,
   select,
   textarea,
-  [role="row"],
+  .fs-row,
   [role="option"] {
     transition:
       color var(--dur-fast) var(--ease-out),
@@ -227,6 +227,20 @@
   @starting-style {
     opacity: 0;
   }
+}
+
+/* A row with a cover link. The cover fills the row and comes first in the
+   DOM. A control in the row is positioned, so it paints above the cover
+   and takes its own click. The base layer lets a utility such as
+   "absolute" win. */
+@layer base {
+  .fs-row :where(a, button, input, select, textarea, label):not(.fs-row-cover) {
+    position: relative;
+  }
+}
+
+.fs-row-cover:focus-visible {
+  outline-offset: -2px;
 }
 
 /* A popover or a dropdown. It grows from its trigger: set the

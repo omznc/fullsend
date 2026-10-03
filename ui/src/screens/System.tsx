@@ -122,7 +122,7 @@ export function System() {
         </EmptyState>
       )}
       {rows.length > 0 && (
-        <div role="table" aria-label="System events">
+        <div role="group" aria-label="System events">
           <TableHead
             template={COLS}
             columns={["level", "source", "message", "when", ""]}

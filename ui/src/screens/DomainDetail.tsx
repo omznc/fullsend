@@ -181,7 +181,7 @@ function Loaded({
               : "It was imported without a Cloudflare token, so fullsend trusts that the records are set."}
           </p>
         ) : (
-          <div role="table" aria-label="DNS records">
+          <div role="group" aria-label="DNS records">
             <TableHead template={COLS} columns={HEAD} className="border-t-0" />
             {domain.records.map((r, i) => (
               <RecordRow key={`${r.type}${r.name}${i}`} r={r} />

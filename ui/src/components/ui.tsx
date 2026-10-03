@@ -18,7 +18,7 @@ import { createPortal } from "react-dom";
 import { ApiRequestError } from "../api";
 import { number, relative, utc } from "../lib/format";
 import { EXIT_MS, useDismiss, useNow, usePresence } from "../lib/hooks";
-import { Link, navigate, toUrl } from "../lib/router";
+import { Link } from "../lib/router";
 
 // The shared components of the Story design system. Square corners,
 // rules instead of cards, lime as the only accent.
@@ -1899,7 +1899,9 @@ declare module "react" {
 }
 
 // A table on a CSS grid. On a narrow screen each row stacks, and the
-// header row hides.
+// header row hides. The grid has no ARIA table roles: the cells are free
+// content, and the header is hidden on a narrow screen. A row that opens
+// something has a real link or button that covers the row.
 export function TableHead({
   columns,
   template,
@@ -1911,7 +1913,6 @@ export function TableHead({
 }) {
   return (
     <div
-      role="row"
       className={cx(
         "hidden h-9 items-center gap-4 border-y border-line px-4 font-mono text-[12px] text-fg3 md:grid md:px-8",
         className,
@@ -1919,7 +1920,7 @@ export function TableHead({
       style={{ gridTemplateColumns: template }}
     >
       {columns.map((c, i) => (
-        <span key={i} role="columnheader" className="flex items-center">
+        <span key={i} className="flex items-center">
           {c}
         </span>
       ))}
@@ -1944,48 +1945,35 @@ export function TableRow({
   muted?: boolean;
   className?: string;
 }) {
-  const open = () => {
-    if (onOpen) onOpen();
-    else if (href) navigate(href);
-  };
-
+  const id = useId();
   const clickable = Boolean(href || onOpen);
+
+  // The cover has no text. It takes its name from the text of the row.
+  const cover = "fs-row-cover absolute inset-0 border-0 bg-transparent p-0";
 
   return (
     <div
-      role="row"
-      tabIndex={clickable ? 0 : undefined}
-      onClick={(e) => {
-        if (!clickable) return;
-
-        if (
-          e.target instanceof Element &&
-          e.target.closest("a,button,input,label")
-        )
-          return;
-
-        if (href && (e.metaKey || e.ctrlKey)) {
-          window.open(toUrl(href), "_blank");
-
-          return;
-        }
-
-        open();
-      }}
-      onKeyDown={(e) => {
-        if (clickable && e.key === "Enter" && e.target === e.currentTarget)
-          open();
-      }}
+      id={id}
       className={cx(
-        "fs-fade grid grid-cols-1 gap-x-4 gap-y-1 border-b border-line px-4 py-3 md:items-center md:px-8 md:py-2 md:[grid-template-columns:var(--cols)]",
+        "fs-row fs-fade relative grid grid-cols-1 gap-x-4 gap-y-1 border-b border-line px-4 py-3 md:items-center md:px-8 md:py-2 md:[grid-template-columns:var(--cols)]",
         clickable &&
-          "cursor-pointer hover:bg-hover hover:shadow-[inset_3px_0_0_var(--accent)] focus-visible:bg-hover focus-visible:shadow-[inset_3px_0_0_var(--accent)] focus-visible:outline-none",
+          "cursor-pointer hover:bg-hover hover:shadow-[inset_3px_0_0_var(--accent)] has-[.fs-row-cover:focus-visible]:bg-hover has-[.fs-row-cover:focus-visible]:shadow-[inset_3px_0_0_var(--accent)]",
         danger && "shadow-[inset_3px_0_0_var(--red)]",
         muted && "text-fg3",
         className,
       )}
       style={{ "--cols": template }}
     >
+      {href ? (
+        <Link href={href} aria-labelledby={id} className={cover} />
+      ) : onOpen ? (
+        <button
+          type="button"
+          aria-labelledby={id}
+          onClick={onOpen}
+          className={cover}
+        />
+      ) : null}
       {children}
     </div>
   );

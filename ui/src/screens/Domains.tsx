@@ -120,7 +120,7 @@ export function Domains() {
         </EmptyState>
       )}
       {rows.length > 0 && (
-        <div role="table" aria-label="Domains">
+        <div role="group" aria-label="Domains">
           <TableHead
             template={COLS}
             columns={[

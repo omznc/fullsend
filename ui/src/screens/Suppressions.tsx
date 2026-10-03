@@ -223,7 +223,7 @@ export function Suppressions() {
         </EmptyState>
       )}
       {rows.length > 0 && (
-        <div role="table" aria-label="Suppressed addresses">
+        <div role="group" aria-label="Suppressed addresses">
           <TableHead
             template={COLS}
             columns={[
@@ -546,7 +546,7 @@ function CloudflareList({
           The Cloudflare list has no addresses.
         </p>
       ) : (
-        <div role="table" aria-label="Cloudflare suppressions">
+        <div role="group" aria-label="Cloudflare suppressions">
           <TableHead
             template={CF_COLS}
             columns={["address", "reason", "note", "added"]}
