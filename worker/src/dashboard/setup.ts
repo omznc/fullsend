@@ -8,6 +8,12 @@ import { isString } from "../lib/json";
 import { setupCode } from "../lib/secrets";
 import { getSettings, type Settings, setSettings } from "../lib/settings";
 import { PUBLIC_PATHS } from "../public-paths";
+import {
+  apiAppInput,
+  isApiApp,
+  rememberPaths,
+  syncApiApp,
+} from "./access-paths";
 import { clearAttempts, takeAttempt } from "./attempts";
 import {
   type DashVars,
@@ -403,21 +409,14 @@ setupRoutes.post("/setup/access/auto", requireSetup, async (c) => {
 
     steps.push({ step: "dashboard_app", ok: true, detail: dashboard.id });
 
+    const existingApi = apps.find((a) => isApiApp(a, hostname));
+
     const api =
-      existing("fullsend API") ??
-      (await cf.createAccessApp({
-        name: "fullsend API",
-        type: "self_hosted",
-        domain: `${hostname}${PUBLIC_PATHS[0]}`,
-        destinations: PUBLIC_PATHS.flatMap((p) => [
-          { type: "public", uri: `${hostname}${p}` },
-          { type: "public", uri: `${hostname}${p}/*` },
-        ]),
-        app_launcher_visible: false,
-        policies: [
-          { name: "public", decision: "bypass", include: [{ everyone: {} }] },
-        ],
-      }));
+      existingApi ?? (await cf.createAccessApp(apiAppInput(hostname)));
+
+    // An app from an older version has the old paths. Update it.
+    if (existingApi) await syncApiApp(c.env, cf, existingApi, hostname);
+    else await rememberPaths(c.env);
 
     steps.push({ step: "api_app", ok: true, detail: api.id });
 

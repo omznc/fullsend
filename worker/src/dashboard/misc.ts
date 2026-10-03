@@ -19,6 +19,7 @@ import { DAY, iso, isoOrNull } from "../lib/time";
 import { PUBLIC_PATHS } from "../public-paths";
 import { parseAddressColumn } from "../send/consumer";
 import { addSuppressions, removeSuppressions } from "../suppressions/service";
+import { API_APP_NAME, isApiApp, syncApiApp } from "./access-paths";
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
 import { dashDomain } from "./domains";
 import { FAILURES_SQL } from "./failures-sql";
@@ -566,6 +567,13 @@ miscRoutes.get("/settings", async (c) => {
       team_domain: s.access_team_domain || null,
       configured: Boolean(s.access_team_domain && s.access_aud),
       public_paths: PUBLIC_PATHS,
+      // True when the paths that fullsend last wrote into the "fullsend
+      // API" application are the current ones. Null when there is no
+      // Access. This is what fullsend wrote, not the live state.
+      paths_current:
+        s.access_team_domain && s.access_aud
+          ? s.access_paths === PUBLIC_PATHS.join(",")
+          : null,
     },
     cloudflare_token_set: hasToken(c.env),
     auth_mode: s.auth_mode === "password" ? "password" : "access",
@@ -599,6 +607,58 @@ miscRoutes.patch("/settings", async (c) => {
   await setSettings(c.env, patch);
 
   return c.json({ ok: true });
+});
+
+// Sets the destinations of the "fullsend API" Access application to the
+// current public paths. A deploy that has Access from an older version
+// needs this after an update that adds a public path.
+miscRoutes.post("/settings/access/sync-paths", async (c) => {
+  const s = await getSettings(c.env);
+
+  if (!hasToken(c.env)) {
+    throw validation("Set the Cloudflare token first.");
+  }
+
+  if (!isHostname(s.api_hostname)) {
+    return c.json(
+      {
+        error: "not_found",
+        message: "No API hostname is set, so there is no Access application.",
+      },
+      404,
+    );
+  }
+
+  const cf = new Cloudflare(c.env);
+
+  try {
+    const app = (await cf.accessApps()).find((a) =>
+      isApiApp(a, s.api_hostname),
+    );
+
+    if (!app) {
+      return c.json(
+        {
+          error: "not_found",
+          message: `No Access application named "${API_APP_NAME}" holds ${s.api_hostname}.`,
+        },
+        404,
+      );
+    }
+
+    await syncApiApp(c.env, cf, app, s.api_hostname);
+
+    return c.json({ ok: true, public_paths: PUBLIC_PATHS });
+  } catch (err) {
+    if (err instanceof CloudflareError) {
+      return c.json(
+        { error: "cloudflare", message: `Cloudflare: ${err.message}` },
+        422,
+      );
+    }
+
+    throw err;
+  }
 });
 
 // Changes the dashboard password (password mode). The new hash also ends

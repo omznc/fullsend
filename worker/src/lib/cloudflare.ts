@@ -252,6 +252,18 @@ export class Cloudflare {
     return this.call(`${this.acct}/access/apps`);
   }
 
+  accessApp(id: string): Promise<AccessApp> {
+    return this.call(`${this.acct}/access/apps/${id}`);
+  }
+
+  // Replaces the application. The body is a full application.
+  updateAccessApp(id: string, body: AccessAppInput): Promise<AccessApp> {
+    return this.call(`${this.acct}/access/apps/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
   createAccessApp(body: AccessAppInput): Promise<AccessApp> {
     return this.call(`${this.acct}/access/apps`, {
       method: "POST",
@@ -352,6 +364,11 @@ export interface AccessApp {
   name: string;
   aud: string;
   domain?: string;
+  type?: string;
+  session_duration?: string;
+  app_launcher_visible?: boolean;
+  // Cloudflare returns the policies of an application as objects.
+  policies?: { id: string; precedence?: number }[];
 }
 
 // The body of POST /access/apps, as the setup sends it.
@@ -362,7 +379,8 @@ export interface AccessAppInput {
   destinations: { type: string; uri: string }[];
   session_duration?: string;
   app_launcher_visible: boolean;
-  policies: AccessPolicy[];
+  // A new policy, or a policy that exists already.
+  policies: (AccessPolicy | { id: string; precedence?: number })[];
 }
 
 export interface AccessPolicy {

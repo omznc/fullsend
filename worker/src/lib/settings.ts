@@ -7,6 +7,10 @@ export const DEFAULTS = {
   access_team_domain: "",
   access_aud: "",
   access_app_ids: "",
+  // The public paths that fullsend last wrote into the "fullsend API"
+  // Access application, joined with commas. It shows what fullsend wrote,
+  // not the live state in Cloudflare.
+  access_paths: "",
   // "password" after the owner chose the password login in the first
   // setup. Empty means Cloudflare Access.
   auth_mode: "",

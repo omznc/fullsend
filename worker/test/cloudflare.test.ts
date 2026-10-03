@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 import type { DomainUpdatedEvent } from "resend";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { signToken } from "../src/dashboard/auth";
 import {
   createDomain,
   deleteDomain,
@@ -15,6 +16,7 @@ import {
 import type { Env } from "../src/env";
 import worker from "../src/index";
 import type { DnsStatus } from "../src/lib/cloudflare";
+import { hashPassword } from "../src/lib/crypto";
 import {
   isJsonObject,
   type JsonObject,
@@ -22,6 +24,7 @@ import {
   parseJsonText,
 } from "../src/lib/json";
 import { sessionSecret, setupCode } from "../src/lib/secrets";
+import { PUBLIC_PATHS } from "../src/public-paths";
 import { createWebhook } from "../src/webhooks/service";
 import { BASE } from "./helpers";
 
@@ -684,6 +687,266 @@ describe("automatic Access setup", () => {
     });
 
     expect(again.status).toBe(403);
+  });
+});
+
+describe("Access path sync", () => {
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Fullsend-Dashboard": "1",
+  };
+
+  const OLD_PATHS = [
+    "/emails",
+    "/domains",
+    "/api-keys",
+    "/webhooks",
+    "/t",
+    "/health",
+  ];
+
+  let cookie = "";
+
+  async function request(path: string, init: RequestInit = {}) {
+    return worker.fetch(
+      new Request(`${BASE}${path}`, {
+        ...init,
+        headers: { ...init.headers, Cookie: cookie },
+      }),
+      cfEnv,
+      createExecutionContext(),
+    );
+  }
+
+  const set = (key: string, value: string) =>
+    env.DB.prepare(
+      "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+    )
+      .bind(key, value)
+      .run();
+
+  beforeEach(async () => {
+    // Password mode gives a session. The Access settings stay, as on a
+    // deploy that has Access.
+    const hash = await hashPassword("pw");
+    await set("auth_mode", "password");
+    await set("password_hash", hash);
+    await set("access_team_domain", "team.cloudflareaccess.com");
+    await set("access_aud", "aud1");
+    await set("api_hostname", "email.example.com");
+    await env.DB.prepare(
+      "DELETE FROM settings WHERE key = 'access_paths'",
+    ).run();
+    cookie = `fs_session=${await signToken(env, "admin", 600, hash)}`;
+  });
+
+  const oldApp = {
+    id: "api1",
+    name: "fullsend API",
+    aud: "aud-api",
+    domain: "email.example.com/emails",
+    type: "self_hosted",
+    app_launcher_visible: false,
+    policies: [{ id: "pol1", precedence: 1 }],
+  };
+
+  const settingsJson = async () =>
+    z
+      .object({ access: z.object({ paths_current: z.boolean().nullable() }) })
+      .parse(await (await request("/api/settings")).json());
+
+  it("sets the destinations of an old application to the current paths", async () => {
+    const puts: JsonValue[] = [];
+
+    fake = fakeCloudflare({
+      [`GET /accounts/${ACCOUNT}/access/apps`]: [
+        {
+          id: "dash1",
+          name: "fullsend dashboard",
+          aud: "aud1",
+          domain: "email.example.com",
+        },
+        {
+          ...oldApp,
+          destinations: OLD_PATHS.flatMap((p) => [
+            { type: "public", uri: `email.example.com${p}` },
+            { type: "public", uri: `email.example.com${p}/*` },
+          ]),
+        },
+        {
+          id: "other",
+          name: "fullsend API",
+          aud: "x",
+          domain: "other.example.com/emails",
+        },
+      ],
+      [`GET /accounts/${ACCOUNT}/access/apps/api1`]: oldApp,
+      [`PUT /accounts/${ACCOUNT}/access/apps/api1`]: (c: Call) => {
+        puts.push(c.body);
+
+        return { result: { ...oldApp } };
+      },
+    });
+
+    // The paths are not written yet, so they are not current.
+    expect((await settingsJson()).access.paths_current).toBe(false);
+
+    const res = await request("/api/settings/access/sync-paths", {
+      method: "POST",
+      headers,
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true });
+    expect(puts).toHaveLength(1);
+
+    const body = z
+      .object({
+        name: z.string(),
+        type: z.string(),
+        domain: z.string(),
+        policies: z.array(z.object({ id: z.string(), precedence: z.number() })),
+        destinations: z.array(z.object({ type: z.string(), uri: z.string() })),
+      })
+      .parse(puts[0]);
+
+    expect(body).toMatchObject({
+      name: "fullsend API",
+      type: "self_hosted",
+      domain: "email.example.com/emails",
+      policies: [{ id: "pol1", precedence: 1 }],
+    });
+
+    const uris = body.destinations.map((d) => d.uri);
+    expect(uris).toContain("email.example.com/suppressions");
+    expect(uris).toContain("email.example.com/suppressions/*");
+    expect(uris).toHaveLength(PUBLIC_PATHS.length * 2);
+    expect(uris.every((u) => u.startsWith("email.example.com/"))).toBe(true);
+
+    expect((await settingsJson()).access.paths_current).toBe(true);
+  });
+
+  it("needs the header, a session and a Cloudflare app", async () => {
+    fake = fakeCloudflare({
+      [`GET /accounts/${ACCOUNT}/access/apps`]: [],
+    });
+
+    const noHeader = await request("/api/settings/access/sync-paths", {
+      method: "POST",
+    });
+
+    expect(noHeader.status).toBe(400);
+
+    const saved = cookie;
+    cookie = "";
+
+    const anonymous = await request("/api/settings/access/sync-paths", {
+      method: "POST",
+      headers,
+    });
+
+    expect(anonymous.status).toBe(401);
+    cookie = saved;
+
+    const missing = await request("/api/settings/access/sync-paths", {
+      method: "POST",
+      headers,
+    });
+
+    expect(missing.status).toBe(404);
+    expect(fake.calls.every((c) => c.method === "GET")).toBe(true);
+  });
+
+  it("reports a Cloudflare error", async () => {
+    fake = fakeCloudflare({});
+
+    const res = await request("/api/settings/access/sync-paths", {
+      method: "POST",
+      headers,
+    });
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ error: "cloudflare" });
+  });
+
+  it("updates the API application that the setup finds", async () => {
+    const puts: string[] = [];
+
+    fake = fakeCloudflare({
+      "GET /zones": [ZONE],
+      [`GET /accounts/${ACCOUNT}/access/organizations`]: {
+        auth_domain: "team.cloudflareaccess.com",
+        name: "team",
+      },
+      [`GET /accounts/${ACCOUNT}/workers/domains`]: [
+        {
+          id: "wd1",
+          hostname: "email.example.com",
+          service: "fullsend",
+          zone_id: "zone1",
+        },
+      ],
+      [`GET /accounts/${ACCOUNT}/access/apps`]: [
+        {
+          id: "dash1",
+          name: "fullsend dashboard",
+          aud: "aud1",
+          domain: "email.example.com",
+        },
+        oldApp,
+      ],
+      [`GET /accounts/${ACCOUNT}/access/apps/api1`]: oldApp,
+      [`PUT /accounts/${ACCOUNT}/access/apps/api1`]: (c: Call) => {
+        puts.push(c.path);
+
+        return { result: oldApp };
+      },
+    });
+
+    // The reuse branch needs the setup to be open.
+    await env.DB.prepare(
+      "DELETE FROM settings WHERE key IN ('auth_mode', 'password_hash', 'access_team_domain', 'access_aud')",
+    ).run();
+
+    const unlock = await worker.fetch(
+      new Request(`${BASE}/api/setup/unlock`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ token: "test-setup-token" }),
+      }),
+      cfEnv,
+      createExecutionContext(),
+    );
+
+    const setupCookie = (unlock.headers.get("Set-Cookie") ?? "").split(";")[0]!;
+
+    const res = await worker.fetch(
+      new Request(`${BASE}/api/setup/access/auto`, {
+        method: "POST",
+        headers: { ...headers, Cookie: setupCookie },
+        body: JSON.stringify({
+          hostname: "email.example.com",
+          emails: ["o@example.com"],
+        }),
+      }),
+      cfEnv,
+      createExecutionContext(),
+    );
+
+    expect(res.status).toBe(200);
+    // The application is reused, not created again, and it gets the paths.
+    expect(
+      fake.calls.some(
+        (c) => c.method === "POST" && c.path.endsWith("/access/apps"),
+      ),
+    ).toBe(false);
+    expect(puts).toEqual([`/accounts/${ACCOUNT}/access/apps/api1`]);
+
+    const stored = await env.DB.prepare(
+      "SELECT value FROM settings WHERE key = 'access_paths'",
+    ).first<{ value: string }>();
+
+    expect(stored?.value).toBe(PUBLIC_PATHS.join(","));
   });
 });
 
