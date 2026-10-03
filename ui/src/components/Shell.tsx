@@ -18,6 +18,7 @@ import {
 export const NAV: { label: string; href: string; icon: string }[] = [
   { label: "overview", href: "/", icon: "dashbaord" },
   { label: "emails", href: "/emails", icon: "mail" },
+  { label: "logs", href: "/logs", icon: "list-box" },
   { label: "domains", href: "/domains", icon: "server" },
   { label: "api keys", href: "/api-keys", icon: "lock" },
   { label: "webhooks", href: "/webhooks", icon: "link" },

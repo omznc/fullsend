@@ -18,7 +18,7 @@ import type { DashVars } from "./auth";
 
 export const emailRoutes = new Hono<DashVars>();
 
-async function keyNames(
+export async function keyNames(
   env: DashVars["Bindings"],
   ids: string[],
 ): Promise<Map<string, string>> {
@@ -45,7 +45,7 @@ interface KeyLabel {
 }
 
 // "rpc:<caller>" and "dashboard:<identity>" are shown as they are.
-function keyLabel(id: string, names: Map<string, string>): KeyLabel {
+export function keyLabel(id: string, names: Map<string, string>): KeyLabel {
   return { id, name: names.get(id) ?? (id.includes(":") ? id : "deleted key") };
 }
 

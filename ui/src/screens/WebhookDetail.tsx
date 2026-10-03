@@ -25,7 +25,7 @@ import {
   errorText,
   useToast,
 } from "../components/ui";
-import { percent } from "../lib/format";
+import { duration, percent } from "../lib/format";
 import { useApi, useNow, usePoll, useTitle } from "../lib/hooks";
 import { isJsonObject, isString, parseJson } from "../lib/json";
 import { Link, navigate, useQuery } from "../lib/router";
@@ -89,9 +89,6 @@ interface DeliveryList {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const duration = (ms: number | null) =>
-  ms === null ? "-" : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`;
 
 // The label of a delivery result: the status code, or the kind of failure.
 function resultLabel(d: Delivery): string {

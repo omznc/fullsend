@@ -319,6 +319,23 @@ export interface SystemEvent {
   detail: JsonValue;
 }
 
+export interface RequestLog {
+  id: string;
+  created_at: string;
+  method: string;
+  path: string;
+  status: number;
+  api_key: { id: string; name: string } | null;
+  error_name: string | null;
+  error_message: string | null;
+  duration_ms: number;
+}
+
+export interface RequestLogPage extends List<RequestLog> {
+  // False when the owner turned the request log off.
+  enabled: boolean;
+}
+
 export interface SearchResult {
   emails: {
     id: string;

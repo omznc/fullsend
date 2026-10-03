@@ -96,3 +96,7 @@ export function plainReason(raw: string | null | undefined): string | null {
 
   return null;
 }
+
+// "230 ms", "1.5 s", or "-" for no value.
+export const duration = (ms: number | null): string =>
+  ms === null ? "-" : ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms} ms`;

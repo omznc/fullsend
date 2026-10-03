@@ -10,6 +10,7 @@ import { Domains } from "./screens/Domains";
 import { EmailDetail } from "./screens/EmailDetail";
 import { Emails } from "./screens/Emails";
 import { Login } from "./screens/Login";
+import { Logs } from "./screens/Logs";
 import { Overview } from "./screens/Overview";
 import { Playground } from "./screens/Playground";
 import { Settings } from "./screens/Settings";
@@ -29,6 +30,7 @@ const ROUTES: Route[] = [
   ["/domains", () => <Domains />],
   ["/domains/:id", (p) => <DomainDetail key={p.id} id={p.id!} />],
   ["/api-keys", () => <ApiKeys />],
+  ["/logs", () => <Logs />],
   ["/webhooks", () => <Webhooks />],
   ["/webhooks/:id", (p) => <WebhookDetail key={p.id} id={p.id!} />],
   ["/suppressions", () => <Suppressions />],

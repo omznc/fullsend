@@ -3,6 +3,7 @@ import { requireIdentity, type DashVars } from "./auth";
 import { domainRoutes } from "./domains";
 import { emailRoutes } from "./emails";
 import { keyRoutes } from "./keys";
+import { logRoutes } from "./logs";
 import { miscRoutes } from "./misc";
 import { setupRoutes } from "./setup";
 import { systemEventRoutes } from "./system-events";
@@ -46,6 +47,8 @@ guarded.route("/api-keys", keyRoutes);
 guarded.route("/webhooks", webhookRoutes);
 
 guarded.route("/system-events", systemEventRoutes);
+
+guarded.route("/logs", logRoutes);
 
 guarded.route("/", miscRoutes);
 
