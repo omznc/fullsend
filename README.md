@@ -179,6 +179,11 @@ column `rpc:<caller>`.
 The request bodies, the responses and the error names are the same as in
 Resend. `Idempotency-Key` and `x-batch-validation` work as in Resend.
 
+[`openapi.json`](openapi.json) describes each public route in OpenAPI 3.1.
+It has the request bodies, the responses, the error shape, the bearer
+auth and the two headers. The Worker does not serve the file. A test fails
+when a public route and the file differ.
+
 **Emails**
 
 | Method  | Path                                              |

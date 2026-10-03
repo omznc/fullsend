@@ -1,0 +1,3588 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "fullsend",
+    "version": "0.2.0",
+    "summary": "An email API that is compatible with Resend.",
+    "description": "The public API of fullsend. The paths, the request bodies, the responses and the error names follow Resend. Send an API key as `Authorization: Bearer <key>`. fullsend does not serve this file: it is in the repository.",
+    "license": {
+      "name": "AGPL-3.0-only",
+      "identifier": "AGPL-3.0-only"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://{host}",
+      "description": "Your fullsend deploy.",
+      "variables": {
+        "host": {
+          "default": "api.example.com",
+          "description": "The API hostname of your deploy."
+        }
+      }
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Emails"
+    },
+    {
+      "name": "Domains"
+    },
+    {
+      "name": "API keys"
+    },
+    {
+      "name": "Webhooks"
+    },
+    {
+      "name": "Suppressions"
+    },
+    {
+      "name": "Logs"
+    },
+    {
+      "name": "Health"
+    },
+    {
+      "name": "Tracking"
+    }
+  ],
+  "paths": {
+    "/emails": {
+      "post": {
+        "tags": ["Emails"],
+        "operationId": "sendEmail",
+        "summary": "Send an email",
+        "description": "Accepts a full access key or a sending key.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key of 1 to 256 characters. A repeat of the same request with the same key returns the first result. The same key with a different body gives 409.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The email. fullsend does not support `template`.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "description": "The sender, as `email@example.com` or `Name <email@example.com>`. The domain must be verified."
+                  },
+                  "to": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "description": "One address."
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "description": "An address."
+                        }
+                      }
+                    ],
+                    "description": "The recipients."
+                  },
+                  "subject": {
+                    "type": "string",
+                    "description": "The subject."
+                  },
+                  "html": {
+                    "type": "string",
+                    "description": "The HTML body. Send `html` or `text`."
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "The plain text body. Send `html` or `text`."
+                  },
+                  "cc": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "description": "One address."
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "description": "An address."
+                        }
+                      }
+                    ]
+                  },
+                  "bcc": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "description": "One address."
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "description": "An address."
+                        }
+                      }
+                    ]
+                  },
+                  "reply_to": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "description": "One address."
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "description": "An address."
+                        }
+                      }
+                    ]
+                  },
+                  "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "description": "Custom headers."
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Tag"
+                    }
+                  },
+                  "scheduled_at": {
+                    "type": "string",
+                    "description": "An ISO 8601 time or natural language (for example `in 1 hour`). At most 30 days from now."
+                  },
+                  "attachments": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/AttachmentInput"
+                    }
+                  }
+                },
+                "required": ["from", "to", "subject"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The email is queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["id"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "get": {
+        "tags": ["Emails"],
+        "operationId": "listEmails",
+        "summary": "List emails",
+        "description": "Newest first. Needs a full access key.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/after"
+          },
+          {
+            "$ref": "#/components/parameters/before"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "list"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/EmailSummary"
+                      }
+                    }
+                  },
+                  "required": ["object", "has_more", "data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/emails/batch": {
+      "post": {
+        "tags": ["Emails"],
+        "operationId": "sendBatch",
+        "summary": "Send up to 100 emails",
+        "description": "A batch email has no `attachments` and no `scheduled_at`.",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key of 1 to 256 characters. A repeat of the same request with the same key returns the first result. The same key with a different body gives 409.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "x-batch-validation",
+            "in": "header",
+            "required": false,
+            "description": "`strict` (default): one invalid email fails the batch. `permissive`: fullsend sends the valid emails and lists the others in `errors`.",
+            "schema": {
+              "type": "string",
+              "enum": ["strict", "permissive"],
+              "default": "strict"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The emails.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "description": "The sender, as `email@example.com` or `Name <email@example.com>`. The domain must be verified."
+                    },
+                    "to": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "description": "One address."
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "description": "An address."
+                          }
+                        }
+                      ],
+                      "description": "The recipients."
+                    },
+                    "subject": {
+                      "type": "string",
+                      "description": "The subject."
+                    },
+                    "html": {
+                      "type": "string",
+                      "description": "The HTML body. Send `html` or `text`."
+                    },
+                    "text": {
+                      "type": "string",
+                      "description": "The plain text body. Send `html` or `text`."
+                    },
+                    "cc": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "description": "One address."
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "description": "An address."
+                          }
+                        }
+                      ]
+                    },
+                    "bcc": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "description": "One address."
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "description": "An address."
+                          }
+                        }
+                      ]
+                    },
+                    "reply_to": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "description": "One address."
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "description": "An address."
+                          }
+                        }
+                      ]
+                    },
+                    "headers": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Custom headers."
+                    },
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Tag"
+                      }
+                    }
+                  },
+                  "required": ["from", "to", "subject"]
+                },
+                "maxItems": 100
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["id"]
+                      }
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "index": {
+                            "type": "integer"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["index", "message"]
+                      },
+                      "description": "Only with `x-batch-validation: permissive`."
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/emails/metrics": {
+      "get": {
+        "tags": ["Emails"],
+        "operationId": "getEmailMetrics",
+        "summary": "Get email metrics",
+        "description": "Counts the email events in UTC. A rate is a fraction from 0 to 1.",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "A date or a date and time. Default: 6 days before `end_date`."
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "A date or a date and time. A date alone includes the whole day."
+          },
+          {
+            "name": "timezone",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["UTC"]
+            }
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["hourly", "daily", "weekly", "monthly"],
+              "default": "daily"
+            }
+          },
+          {
+            "name": "dimensions",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "A comma separated list of `period`, `domain` and `email`."
+          },
+          {
+            "name": "metrics",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "A comma separated list. Allowed: sent, delivered, complained, suppressed, bounced, bounced_transient, bounced_permanent, bounced_undetermined, opened, clicked, delivery_delayed, failed, unique_opened, unique_clicked, delivery_rate, open_rate, click_rate, bounce_rate, complaint_rate."
+          },
+          {
+            "name": "domain_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "A comma separated list of domain ids."
+          },
+          {
+            "name": "email_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "A comma separated list of email ids."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Metrics"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/emails/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The email id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Emails"],
+        "operationId": "getEmail",
+        "summary": "Get an email",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Email"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Emails"],
+        "operationId": "updateEmail",
+        "summary": "Change the send time of a scheduled email",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scheduled_at": {
+                    "type": "string",
+                    "description": "An ISO 8601 time or natural language."
+                  }
+                },
+                "required": ["scheduled_at"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailRef"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/emails/{id}/cancel": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The email id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": ["Emails"],
+        "operationId": "cancelEmail",
+        "summary": "Cancel a scheduled email",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailRef"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/emails/{id}/attachments": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The email id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Emails"],
+        "operationId": "listAttachments",
+        "summary": "List the attachments of an email",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/after"
+          },
+          {
+            "$ref": "#/components/parameters/before"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "list"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Attachment"
+                      }
+                    }
+                  },
+                  "required": ["object", "has_more", "data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/emails/{id}/attachments/{attachmentId}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The email id.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "attachmentId",
+          "in": "path",
+          "required": true,
+          "description": "The attachment id (its index).",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Emails"],
+        "operationId": "getAttachment",
+        "summary": "Get an attachment",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Attachment"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/emails/{id}/attachments/{attachmentId}/download": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The email id.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "attachmentId",
+          "in": "path",
+          "required": true,
+          "description": "The attachment id (its index).",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "expires",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The expiry time in epoch milliseconds."
+        },
+        {
+          "name": "sig",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The signature."
+        }
+      ],
+      "get": {
+        "tags": ["Emails"],
+        "operationId": "downloadAttachment",
+        "summary": "Download an attachment",
+        "description": "The signed link needs no API key. It expires after one hour.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The file.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/domains": {
+      "post": {
+        "tags": ["Domains"],
+        "operationId": "createDomain",
+        "summary": "Add a domain",
+        "description": "The domain must be in an active zone of the Cloudflare account.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "The domain name."
+                  },
+                  "region": {
+                    "type": "string",
+                    "description": "Only the default region is accepted."
+                  },
+                  "open_tracking": {
+                    "type": "boolean"
+                  },
+                  "click_tracking": {
+                    "type": "boolean"
+                  },
+                  "tls": {
+                    "type": "string",
+                    "enum": ["opportunistic", "enforced"],
+                    "description": "Only `opportunistic` is accepted."
+                  },
+                  "custom_return_path": {
+                    "type": "string",
+                    "description": "Cloudflare sets the return path. fullsend refuses another value."
+                  }
+                },
+                "required": ["name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "get": {
+        "tags": ["Domains"],
+        "operationId": "listDomains",
+        "summary": "List domains",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/after"
+          },
+          {
+            "$ref": "#/components/parameters/before"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "list"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Domain"
+                      }
+                    }
+                  },
+                  "required": ["object", "has_more", "data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/domains/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The domain id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Domains"],
+        "operationId": "getDomain",
+        "summary": "Get a domain with its DNS records",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Domains"],
+        "operationId": "updateDomain",
+        "summary": "Change the tracking of a domain",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "open_tracking": {
+                    "type": "boolean"
+                  },
+                  "click_tracking": {
+                    "type": "boolean"
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainRef"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Domains"],
+        "operationId": "deleteDomain",
+        "summary": "Remove a domain",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainDeleted"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/domains/{id}/verify": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The domain id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": ["Domains"],
+        "operationId": "verifyDomain",
+        "summary": "Check the DNS records of a domain",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DomainRef"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/api-keys": {
+      "post": {
+        "tags": ["API keys"],
+        "operationId": "createApiKey",
+        "summary": "Make an API key",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "The name of the key."
+                  },
+                  "permission": {
+                    "type": "string",
+                    "enum": ["full_access", "sending_access"]
+                  },
+                  "domain_id": {
+                    "type": "string",
+                    "description": "Limits a sending key to one domain."
+                  }
+                },
+                "required": ["name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string",
+                      "description": "The key. fullsend shows it one time."
+                    }
+                  },
+                  "required": ["id", "token"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "get": {
+        "tags": ["API keys"],
+        "operationId": "listApiKeys",
+        "summary": "List API keys",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/after"
+          },
+          {
+            "$ref": "#/components/parameters/before"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "list"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ApiKey"
+                      }
+                    }
+                  },
+                  "required": ["object", "has_more", "data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/api-keys/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The key id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "tags": ["API keys"],
+        "operationId": "renameApiKey",
+        "summary": "Rename an API key",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "The new name."
+                  }
+                },
+                "required": ["name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "api_key"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["object", "id"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["API keys"],
+        "operationId": "deleteApiKey",
+        "summary": "Revoke an API key",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "api_key"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "deleted": {
+                      "const": true
+                    }
+                  },
+                  "required": ["object", "id", "deleted"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/webhooks": {
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "createWebhook",
+        "summary": "Add a webhook endpoint",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "description": "An http or https URL.",
+                    "format": "uri"
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/WebhookEventType"
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": ["endpoint", "events"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "webhook"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "signing_secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["object", "id", "signing_secret"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "listWebhooks",
+        "summary": "List webhook endpoints",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/after"
+          },
+          {
+            "$ref": "#/components/parameters/before"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "list"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookSummary"
+                      }
+                    }
+                  },
+                  "required": ["object", "has_more", "data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/webhooks/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The webhook id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "getWebhook",
+        "summary": "Get a webhook endpoint",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Webhook"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Webhooks"],
+        "operationId": "updateWebhook",
+        "summary": "Change a webhook endpoint",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "description": "An http or https URL.",
+                    "format": "uri"
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/WebhookEventType"
+                    },
+                    "minItems": 1
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["enabled", "disabled"]
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "webhook"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["object", "id"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Webhooks"],
+        "operationId": "deleteWebhook",
+        "summary": "Remove a webhook endpoint",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "webhook"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "deleted": {
+                      "const": true
+                    }
+                  },
+                  "required": ["object", "id", "deleted"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/webhooks/{id}/signing-secret/rotate": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The webhook id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "rotateWebhookSecret",
+        "summary": "Rotate the signing secret",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "webhook"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "signing_secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["object", "id", "signing_secret"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/webhooks/{id}/events": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The webhook id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "listWebhookEvents",
+        "summary": "List the events that fullsend sent to an endpoint",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/after"
+          },
+          {
+            "$ref": "#/components/parameters/before"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "list"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookEvent"
+                      }
+                    }
+                  },
+                  "required": ["object", "has_more", "data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/webhooks/{id}/events/{eventId}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The webhook id.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "eventId",
+          "in": "path",
+          "required": true,
+          "description": "The event id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "getWebhookEvent",
+        "summary": "Get an event with its payload",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEventDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/webhooks/{id}/events/{eventId}/attempts": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The webhook id.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "eventId",
+          "in": "path",
+          "required": true,
+          "description": "The event id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "listWebhookAttempts",
+        "summary": "List the delivery attempts of an event",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/after"
+          },
+          {
+            "$ref": "#/components/parameters/before"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "list"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookAttempt"
+                      }
+                    }
+                  },
+                  "required": ["object", "has_more", "data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/webhooks/{id}/events/{eventId}/replay": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The webhook id.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "eventId",
+          "in": "path",
+          "required": true,
+          "description": "The event id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "replayWebhookEvent",
+        "summary": "Send an event again",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "webhook_event"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["object", "id"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/suppressions": {
+      "post": {
+        "tags": ["Suppressions"],
+        "operationId": "createSuppression",
+        "summary": "Suppress an address",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "description": "The address."
+                  }
+                },
+                "required": ["email"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "suppression"
+                    },
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["object", "id"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "get": {
+        "tags": ["Suppressions"],
+        "operationId": "listSuppressions",
+        "summary": "List suppressed addresses",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/after"
+          },
+          {
+            "$ref": "#/components/parameters/before"
+          },
+          {
+            "name": "origin",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["bounce", "complaint", "manual"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "list"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Suppression"
+                      }
+                    }
+                  },
+                  "required": ["object", "has_more", "data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/suppressions/batch/add": {
+      "post": {
+        "tags": ["Suppressions"],
+        "operationId": "addSuppressions",
+        "summary": "Suppress up to 100 addresses",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "emails": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "description": "An address."
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  }
+                },
+                "required": ["emails"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "object": {
+                            "const": "suppression"
+                          },
+                          "id": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["object", "id"]
+                      }
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/suppressions/batch/remove": {
+      "post": {
+        "tags": ["Suppressions"],
+        "operationId": "removeSuppressions",
+        "summary": "Remove up to 100 suppressions",
+        "description": "Send `emails` or `ids`, not both.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "emails": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "description": "An address."
+                    },
+                    "maxItems": 100
+                  },
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "description": "A suppression id."
+                    },
+                    "maxItems": 100
+                  }
+                },
+                "required": []
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "object": {
+                            "const": "suppression"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "deleted": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": ["object", "id", "deleted"]
+                      }
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/suppressions/{idOrEmail}": {
+      "parameters": [
+        {
+          "name": "idOrEmail",
+          "in": "path",
+          "required": true,
+          "description": "The suppression id or the address.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Suppressions"],
+        "operationId": "getSuppression",
+        "summary": "Get a suppression",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Suppression"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Suppressions"],
+        "operationId": "deleteSuppression",
+        "summary": "Remove a suppression",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "suppression"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "deleted": {
+                      "const": true
+                    }
+                  },
+                  "required": ["object", "id", "deleted"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/logs": {
+      "get": {
+        "tags": ["Logs"],
+        "operationId": "listLogs",
+        "summary": "List the requests to the Resend routes",
+        "description": "fullsend stores no request body and no User-Agent.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/after"
+          },
+          {
+            "$ref": "#/components/parameters/before"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "const": "list"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LogSummary"
+                      }
+                    }
+                  },
+                  "required": ["object", "has_more", "data"]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "422": {
+            "$ref": "#/components/responses/Error422"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/logs/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The log id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Logs"],
+        "operationId": "getLog",
+        "summary": "Get a log entry",
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Log"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "operationId": "getHealth",
+        "summary": "Check that the Worker runs",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "const": true
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["ok", "version"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/t/o/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The email id. A `.gif` or `.png` suffix is allowed.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": ["Tracking"],
+        "operationId": "trackOpen",
+        "summary": "The open tracking pixel",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "A 1x1 GIF.",
+            "content": {
+              "image/gif": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": ["Tracking"],
+        "operationId": "trackOpenHead",
+        "summary": "The open tracking pixel (HEAD)",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The headers of the GIF."
+          }
+        }
+      }
+    },
+    "/t/c/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The email id.",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "u",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uri"
+          },
+          "description": "The target URL."
+        },
+        {
+          "name": "s",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The signature of the link."
+        }
+      ],
+      "get": {
+        "tags": ["Tracking"],
+        "operationId": "trackClick",
+        "summary": "The click tracking redirect",
+        "security": [],
+        "responses": {
+          "302": {
+            "description": "Redirects to the target URL."
+          },
+          "400": {
+            "description": "The signature is not valid.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": ["Tracking"],
+        "operationId": "trackClickHead",
+        "summary": "The click tracking redirect (HEAD)",
+        "security": [],
+        "responses": {
+          "302": {
+            "description": "Redirects to the target URL."
+          },
+          "400": {
+            "description": "The signature is not valid."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A fullsend API key. A sending key can call only `POST /emails` and `POST /emails/batch`."
+      }
+    },
+    "parameters": {
+      "limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "The page size, from 1 to 100. Default: 20.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "after": {
+        "name": "after",
+        "in": "query",
+        "description": "A cursor id. Returns the items after it. Do not use with `before`.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "before": {
+        "name": "before",
+        "in": "query",
+        "description": "A cursor id. Returns the items before it. Do not use with `after`.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "Error400": {
+        "description": "The idempotency key is not valid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "statusCode": 400,
+              "name": "invalid_idempotency_key",
+              "message": "The key must be between 1-256 chars."
+            }
+          }
+        }
+      },
+      "Error401": {
+        "description": "The API key is missing, or it has no access to the route.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "statusCode": 401,
+              "name": "missing_api_key",
+              "message": "Missing API key in the authorization header."
+            }
+          }
+        }
+      },
+      "Error403": {
+        "description": "The API key is not valid, or the link is not valid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "statusCode": 403,
+              "name": "invalid_api_key",
+              "message": "API key is invalid"
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "The resource does not exist.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "statusCode": 404,
+              "name": "not_found",
+              "message": "Email not found"
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "The idempotency key is in use.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "statusCode": 409,
+              "name": "invalid_idempotent_request",
+              "message": "This idempotency key has been used on a request with a different payload."
+            }
+          }
+        }
+      },
+      "Error422": {
+        "description": "The request is not valid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "statusCode": 422,
+              "name": "validation_error",
+              "message": "Missing `html` or `text` field."
+            }
+          }
+        }
+      },
+      "Error429": {
+        "description": "The rate limit of the key is reached.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "statusCode": 429,
+              "name": "rate_limit_exceeded",
+              "message": "Too many requests."
+            }
+          }
+        },
+        "headers": {
+          "retry-after": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Seconds to wait."
+          },
+          "ratelimit-limit": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "ratelimit-remaining": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "ratelimit-reset": {
+            "schema": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "Error500": {
+        "description": "An error in fullsend.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "statusCode": 500,
+              "name": "internal_server_error",
+              "message": "Internal server error."
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string",
+            "enum": [
+              "invalid_idempotency_key",
+              "validation_error",
+              "missing_api_key",
+              "restricted_api_key",
+              "invalid_api_key",
+              "not_found",
+              "method_not_allowed",
+              "invalid_idempotent_request",
+              "concurrent_idempotent_requests",
+              "invalid_attachment",
+              "invalid_from_address",
+              "invalid_access",
+              "invalid_parameter",
+              "invalid_region",
+              "missing_required_field",
+              "monthly_quota_exceeded",
+              "daily_quota_exceeded",
+              "rate_limit_exceeded",
+              "security_error",
+              "application_error",
+              "internal_server_error"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["statusCode", "name", "message"],
+        "description": "The error shape of Resend."
+      },
+      "Tag": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,256}$"
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,256}$"
+          }
+        },
+        "required": ["name", "value"]
+      },
+      "AttachmentInput": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Needed with `content`. With `path`, the default is the end of the URL."
+          },
+          "content": {
+            "type": "string",
+            "description": "The file in base64."
+          },
+          "path": {
+            "type": "string",
+            "description": "An http or https URL that fullsend fetches (10 files at most).",
+            "format": "uri"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "content_id": {
+            "type": "string",
+            "description": "Makes the attachment inline."
+          }
+        },
+        "required": [],
+        "description": "Set `content` or `path`. The email is 5 MiB or less in total."
+      },
+      "EmailSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "from": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "bcc": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "cc": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "reply_to": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_event": {
+            "type": "string"
+          },
+          "scheduled_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "message_id": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": [
+          "id",
+          "to",
+          "from",
+          "created_at",
+          "subject",
+          "bcc",
+          "cc",
+          "reply_to",
+          "last_event",
+          "scheduled_at",
+          "message_id"
+        ]
+      },
+      "Email": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EmailSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "object": {
+                "const": "email"
+              },
+              "html": {
+                "type": ["string", "null"]
+              },
+              "text": {
+                "type": ["string", "null"]
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Tag"
+                }
+              }
+            },
+            "required": ["object", "html", "text", "tags"]
+          }
+        ]
+      },
+      "EmailRef": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "const": "email"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": ["object", "id"]
+      },
+      "Attachment": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "const": "attachment"
+          },
+          "id": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "content_disposition": {
+            "type": "string",
+            "enum": ["inline", "attachment"]
+          },
+          "content_id": {
+            "type": "string"
+          },
+          "download_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "size",
+          "content_type",
+          "content_disposition",
+          "download_url",
+          "expires_at"
+        ],
+        "description": "In a list, an item has no `object`."
+      },
+      "Metrics": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "const": "metrics"
+          },
+          "start_date": {
+            "type": "string"
+          },
+          "end_date": {
+            "type": "string"
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "sent",
+                "delivered",
+                "complained",
+                "suppressed",
+                "bounced",
+                "bounced_transient",
+                "bounced_permanent",
+                "bounced_undetermined",
+                "opened",
+                "clicked",
+                "delivery_delayed",
+                "failed",
+                "unique_opened",
+                "unique_clicked",
+                "delivery_rate",
+                "open_rate",
+                "click_rate",
+                "bounce_rate",
+                "complaint_rate"
+              ]
+            }
+          },
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["period", "domain", "email"]
+            }
+          },
+          "granularity": {
+            "type": "string",
+            "enum": ["hourly", "daily", "weekly", "monthly"]
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": {
+                "type": ["number", "string"]
+              },
+              "description": "One row. A count is a number. `period`, `domain` and `email` are text."
+            }
+          }
+        },
+        "required": [
+          "object",
+          "start_date",
+          "end_date",
+          "metrics",
+          "dimensions",
+          "granularity",
+          "data"
+        ]
+      },
+      "DomainRecord": {
+        "type": "object",
+        "properties": {
+          "record": {
+            "type": "string",
+            "description": "SPF, DKIM or another kind."
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "ttl": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          }
+        },
+        "required": ["record", "name", "type", "ttl", "status", "value"]
+      },
+      "Domain": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["not_started", "pending", "verified", "failed"]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "region": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "sending": {
+                "type": "string"
+              },
+              "receiving": {
+                "type": "string"
+              }
+            },
+            "required": ["sending", "receiving"]
+          },
+          "open_tracking": {
+            "type": "boolean"
+          },
+          "click_tracking": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "created_at",
+          "region",
+          "capabilities",
+          "open_tracking",
+          "click_tracking"
+        ]
+      },
+      "DomainDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Domain"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "records": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/DomainRecord"
+                }
+              }
+            },
+            "required": ["records"]
+          }
+        ]
+      },
+      "DomainRef": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "const": "domain"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": ["object", "id"]
+      },
+      "DomainDeleted": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "const": "domain"
+          },
+          "id": {
+            "type": "string"
+          },
+          "deleted": {
+            "const": true
+          }
+        },
+        "required": ["object", "id", "deleted"]
+      },
+      "ApiKey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_used_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        },
+        "required": ["id", "name", "created_at", "last_used_at"]
+      },
+      "WebhookEventType": {
+        "type": "string",
+        "enum": [
+          "email.sent",
+          "email.scheduled",
+          "email.delivered",
+          "email.delivery_delayed",
+          "email.complained",
+          "email.bounced",
+          "email.opened",
+          "email.clicked",
+          "email.received",
+          "email.failed",
+          "email.suppressed",
+          "contact.created",
+          "contact.updated",
+          "contact.deleted",
+          "contact.topics.updated",
+          "domain.created",
+          "domain.updated",
+          "domain.deleted",
+          "suppression.added",
+          "suppression.removed",
+          "topic.created",
+          "topic.updated",
+          "topic.deleted"
+        ]
+      },
+      "WebhookSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["enabled", "disabled"]
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookEventType"
+            }
+          }
+        },
+        "required": ["id", "endpoint", "created_at", "status", "events"]
+      },
+      "Webhook": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WebhookSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "object": {
+                "const": "webhook"
+              },
+              "signing_secret": {
+                "type": "string"
+              }
+            },
+            "required": ["object", "signing_secret"]
+          }
+        ]
+      },
+      "WebhookEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["success", "pending", "failed", "attempting"]
+          }
+        },
+        "required": ["id", "type", "created_at", "status"]
+      },
+      "WebhookEventDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WebhookEvent"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "object": {
+                "const": "webhook_event"
+              },
+              "next_attempt_at": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              },
+              "payload": {
+                "description": "The JSON body that fullsend sent."
+              }
+            },
+            "required": ["object", "next_attempt_at", "payload"]
+          }
+        ]
+      },
+      "WebhookAttempt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "http_status_code": {
+            "type": "integer",
+            "description": "0 when the request did not get a response."
+          },
+          "response": {
+            "type": "string"
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["id", "http_status_code", "response", "sent_at"]
+      },
+      "Suppression": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "const": "suppression"
+          },
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string",
+            "enum": ["bounce", "complaint", "manual"]
+          },
+          "source_id": {
+            "type": ["string", "null"]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["id", "email", "origin", "source_id", "created_at"],
+        "description": "In a list, an item has no `object`."
+      },
+      "LogSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "response_status": {
+            "type": "integer"
+          },
+          "user_agent": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "endpoint",
+          "method",
+          "response_status",
+          "user_agent"
+        ]
+      },
+      "Log": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/LogSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "object": {
+                "const": "log"
+              },
+              "request_body": {
+                "type": "null"
+              },
+              "response_body": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Error"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The error body of a failed request, else null."
+              }
+            },
+            "required": ["object", "request_body", "response_body"]
+          }
+        ]
+      }
+    }
+  }
+}

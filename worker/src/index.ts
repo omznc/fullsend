@@ -29,7 +29,8 @@ import { handleHooksBatch } from "./webhooks/deliver";
 
 export { FullsendRpc } from "./rpc";
 
-const app = new Hono<DashVars>();
+// The test openapi.test.ts reads the routes of this app.
+export const app = new Hono<DashVars>();
 
 app.onError((err, c) => {
   if (err instanceof ApiError) {
