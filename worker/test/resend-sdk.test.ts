@@ -8,6 +8,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ACCEPTED_WEBHOOK_EVENTS, WEBHOOK_EVENTS } from "../src/events/record";
+import { createKey } from "../src/keys/service";
 import { parseJsonText } from "../src/lib/json";
 import { deliver } from "../src/webhooks/deliver";
 import { testBody } from "../src/webhooks/payload";
@@ -1615,6 +1616,77 @@ describe("email metrics", () => {
     const { token } = await newKey({ permission: "sending_access" });
     const sender = new Resend(token, { baseUrl: BASE });
     const res = await sender.emails.metrics();
+
+    expect(res.error).toMatchObject({
+      statusCode: 401,
+      name: "restricted_api_key",
+    });
+  });
+});
+
+describe("logs", () => {
+  it("lists and reads the request log", async () => {
+    // A key with a high rate limit, for the polling below.
+    const { token } = await createKey(env, { name: "logs", rate_limit: 1000 });
+    const resend = new Resend(token, { baseUrl: BASE });
+
+    await resend.emails.get("00000000-0000-4000-8000-000000000000");
+
+    // The Worker writes the log row after the response.
+    let list = await resend.logs.list({ limit: 100 });
+
+    for (let i = 0; i < 50; i++) {
+      if (list.data?.data.some((l) => l.endpoint.startsWith("/emails/0")))
+        break;
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      list = await resend.logs.list({ limit: 100 });
+    }
+
+    expect(list.error).toBeNull();
+    expect(list.data?.object).toBe("list");
+
+    const entry = list.data?.data.find((l) =>
+      l.endpoint.startsWith("/emails/0"),
+    );
+
+    expect(entry).toMatchObject({
+      method: "GET",
+      endpoint: "/emails/00000000-0000-4000-8000-000000000000",
+      response_status: 404,
+      user_agent: null,
+    });
+    expect(new Date(entry!.created_at).toISOString()).toBe(entry!.created_at);
+
+    const one = await resend.logs.get(entry!.id);
+
+    expect(one.data).toMatchObject({
+      object: "log",
+      id: entry!.id,
+      response_status: 404,
+      request_body: null,
+      response_body: { statusCode: 404, name: "not_found" },
+    });
+
+    const paged = await resend.logs.list({ limit: 1 });
+    expect(paged.data?.data).toHaveLength(1);
+    expect(paged.data?.has_more).toBe(true);
+
+    const next = await resend.logs.list({
+      limit: 1,
+      after: paged.data!.data[0]!.id,
+    });
+
+    expect(next.data?.data[0]?.id).not.toBe(paged.data!.data[0]!.id);
+
+    const missing = await resend.logs.get("no-such-log");
+    expect(missing.error).toMatchObject({ statusCode: 404, name: "not_found" });
+  });
+
+  it("refuses a sending key", async () => {
+    const { token } = await newKey({ permission: "sending_access" });
+    const sender = new Resend(token, { baseUrl: BASE });
+    const res = await sender.logs.list();
 
     expect(res.error).toMatchObject({
       statusCode: 401,

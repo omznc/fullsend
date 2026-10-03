@@ -11,6 +11,7 @@ export const PUBLIC_PATHS: readonly string[] = [
   "/api-keys",
   "/webhooks",
   "/suppressions",
+  "/logs",
   "/t",
   "/health",
 ];
