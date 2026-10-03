@@ -9,6 +9,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { ACCEPTED_WEBHOOK_EVENTS, WEBHOOK_EVENTS } from "../src/events/record";
 import { parseJsonText } from "../src/lib/json";
+import { deliver } from "../src/webhooks/deliver";
+import { testBody } from "../src/webhooks/payload";
 import { addDomain, BASE, newKey, routeFetchToWorker } from "./helpers";
 
 // Runs the official resend SDK against the Worker, with no patch: only
@@ -1054,6 +1056,270 @@ describe("email attachments", () => {
     const { token } = await newKey({ permission: "sending_access" });
     const sender = new Resend(token, { baseUrl: BASE });
     const res = await sender.emails.attachments.list({ emailId });
+
+    expect(res.error).toMatchObject({
+      statusCode: 401,
+      name: "restricted_api_key",
+    });
+  });
+});
+
+describe("webhook events", () => {
+  let client: Resend;
+  let webhookId: string;
+  let respond: (url: string) => Response | Promise<Response>;
+  let prior: typeof fetch;
+
+  // Stores one attempt of a message, with the stub response.
+  const attempt = (messageId: string, n: number, type = "email.sent") =>
+    deliver(
+      env,
+      { webhookId, messageId, eventId: null, body: testBody(type) },
+      n,
+    );
+
+  beforeAll(async () => {
+    const { token } = await newKey();
+    client = new Resend(token, { baseUrl: BASE });
+
+    const created = await client.webhooks.create({
+      endpoint: "https://hooks.example.com/events",
+      events: ["email.sent", "domain.updated"],
+    });
+
+    webhookId = created.data!.id;
+
+    // The Worker sends the webhook with fetch. The stub answers for the
+    // endpoint and passes the other calls on.
+    prior = globalThis.fetch;
+    // SAFETY: the stub implements the (input, init) form of fetch. That is
+    // the only form that the Worker and the resend SDK call.
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const req = new Request(input, init);
+
+      if (req.url.startsWith("https://hooks.example.com/")) {
+        return respond(req.url);
+      }
+
+      return prior(req);
+    }) as typeof fetch;
+
+    // A message that failed, then worked.
+    respond = () => new Response("try later", { status: 500 });
+    await attempt("msg_retry", 1);
+    respond = () => new Response("ok", { status: 200 });
+    await attempt("msg_retry", 2);
+
+    // A message that failed at once, with a body that tells the reason.
+    respond = () => new Response("down", { status: 503 });
+    await attempt("msg_waiting", 1, "domain.updated");
+
+    // A message that used its last attempt.
+    await attempt("msg_dead", 8);
+
+    // A message that got no response.
+    respond = () => {
+      throw new Error("connection refused");
+    };
+
+    await attempt("msg_network", 1);
+  });
+
+  afterAll(() => {
+    globalThis.fetch = prior;
+  });
+
+  it("lists the events with the status of each one", async () => {
+    const list = await client.webhooks.events.list({ webhookId });
+
+    expect(list.error).toBeNull();
+    expect(list.data?.object).toBe("list");
+    expect(list.data?.has_more).toBe(false);
+    const byId = new Map(list.data!.data.map((e) => [e.id, e]));
+
+    expect(byId.get("msg_retry")).toMatchObject({
+      type: "email.sent",
+      status: "success",
+    });
+    expect(byId.get("msg_waiting")).toMatchObject({
+      type: "domain.updated",
+      status: "attempting",
+    });
+
+    expect(byId.get("msg_dead")?.status).toBe("failed");
+    expect(byId.get("msg_network")?.status).toBe("attempting");
+    expect(byId.get("msg_retry")?.created_at).toMatch(/^\d{4}-/);
+  });
+
+  it("pages the events", async () => {
+    const all = await client.webhooks.events.list({ webhookId, limit: 100 });
+    const ids = all.data!.data.map((e) => e.id);
+    expect(ids).toHaveLength(4);
+
+    const seen: string[] = [];
+    let after: string | undefined;
+
+    for (let i = 0; i < 10; i++) {
+      const page = await client.webhooks.events.list({
+        webhookId,
+        limit: 3,
+        after,
+      });
+
+      seen.push(...page.data!.data.map((e) => e.id));
+
+      if (!page.data!.has_more) break;
+      after = page.data!.data.at(-1)!.id;
+    }
+
+    expect(seen).toEqual(ids);
+
+    const bad = await client.webhooks.events.list({ webhookId, after: "nope" });
+    expect(bad.error).toMatchObject({
+      statusCode: 422,
+      name: "invalid_parameter",
+    });
+  });
+
+  it("gets an event with its payload and next attempt", async () => {
+    const waiting = await client.webhooks.events.get({
+      webhookId,
+      eventId: "msg_waiting",
+    });
+
+    expect(waiting.data).toMatchObject({
+      object: "webhook_event",
+      id: "msg_waiting",
+      type: "domain.updated",
+      status: "attempting",
+      payload: { type: "domain.updated" },
+    });
+
+    // The first delay is 5 seconds after the attempt.
+    expect(Date.parse(waiting.data!.next_attempt_at!)).toBeGreaterThan(
+      Date.now() - 5000,
+    );
+
+    const done = await client.webhooks.events.get({
+      webhookId,
+      eventId: "msg_retry",
+    });
+    expect(done.data?.next_attempt_at).toBeNull();
+
+    const unknown = await client.webhooks.events.get({
+      webhookId,
+      eventId: "msg_none",
+    });
+    expect(unknown.error).toMatchObject({ statusCode: 404, name: "not_found" });
+
+    const hook = await client.webhooks.events.get({
+      webhookId: crypto.randomUUID(),
+      eventId: "msg_retry",
+    });
+
+    expect(hook.error).toMatchObject({ statusCode: 404, name: "not_found" });
+  });
+
+  it("lists the attempts of an event, newest first", async () => {
+    const attempts = await client.webhooks.events.attempts.list({
+      webhookId,
+      eventId: "msg_retry",
+    });
+
+    expect(attempts.error).toBeNull();
+    expect(attempts.data?.data.map((a) => a.http_status_code)).toEqual([
+      200, 500,
+    ]);
+    expect(attempts.data?.data.map((a) => a.response)).toEqual([
+      "ok",
+      "try later",
+    ]);
+    expect(attempts.data?.data[0]?.sent_at).toMatch(/^\d{4}-/);
+
+    const page = await client.webhooks.events.attempts.list({
+      webhookId,
+      eventId: "msg_retry",
+      limit: 1,
+    });
+
+    expect(page.data?.has_more).toBe(true);
+
+    const network = await client.webhooks.events.attempts.list({
+      webhookId,
+      eventId: "msg_network",
+    });
+
+    expect(network.data?.data[0]).toMatchObject({
+      http_status_code: 0,
+      response: "connection refused",
+    });
+
+    const unknown = await client.webhooks.events.attempts.list({
+      webhookId,
+      eventId: "msg_none",
+    });
+
+    expect(unknown.error).toMatchObject({ statusCode: 404 });
+  });
+
+  it("replays an event with the same id and body", async () => {
+    const send = vi
+      .spyOn(env.HOOKS_QUEUE, "send")
+      .mockResolvedValue({
+        metadata: { metrics: { backlogCount: 0, backlogBytes: 0 } },
+      });
+
+    try {
+      const replay = await client.webhooks.events.replay({
+        webhookId,
+        eventId: "msg_retry",
+      });
+
+      expect(replay.data).toEqual({ object: "webhook_event", id: "msg_retry" });
+      expect(send).toHaveBeenCalledTimes(1);
+
+      const message = send.mock.calls[0]![0];
+      expect(message).toMatchObject({
+        webhookId,
+        messageId: "msg_retry",
+        eventId: null,
+      });
+      expect(parseJsonText(message.body!)).toMatchObject({
+        type: "email.sent",
+      });
+
+      const unknown = await client.webhooks.events.replay({
+        webhookId,
+        eventId: "msg_none",
+      });
+      expect(unknown.error).toMatchObject({
+        statusCode: 404,
+        name: "not_found",
+      });
+
+      await client.webhooks.update(webhookId, { status: "disabled" });
+      const off = await client.webhooks.events.replay({
+        webhookId,
+        eventId: "msg_retry",
+      });
+      expect(off.error).toMatchObject({
+        statusCode: 422,
+        name: "validation_error",
+      });
+      await client.webhooks.update(webhookId, { status: "enabled" });
+      expect(send).toHaveBeenCalledTimes(1);
+    } finally {
+      send.mockRestore();
+    }
+  });
+
+  it("limits a sending key", async () => {
+    const { token } = await newKey({ permission: "sending_access" });
+    const sender = new Resend(token, { baseUrl: BASE });
+    const res = await sender.webhooks.events.list({ webhookId });
 
     expect(res.error).toMatchObject({
       statusCode: 401,

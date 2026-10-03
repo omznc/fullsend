@@ -6,7 +6,7 @@ import { buildEventBody } from "./payload";
 import { sign } from "./sign";
 
 // Delay before each retry, in seconds. The sum is about 27 hours.
-const RETRY_DELAYS = [5, 300, 1800, 7200, 18000, 36000, 36000];
+export const RETRY_DELAYS = [5, 300, 1800, 7200, 18000, 36000, 36000];
 
 const TIMEOUT_MS = 15_000;
 
