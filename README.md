@@ -246,10 +246,18 @@ Resend SDK. fullsend sends the `email.*` events (except `email.received`),
 
 In a `:id` position, a suppression route accepts an id or an email address.
 
+**Logs**
+
+| Method | Path                 |
+| ------ | -------------------- |
+| `GET`  | `/logs`, `/logs/:id` |
+
+These routes need a full access key. They read the request log (see below).
+
 **Lists**
 
-`GET /emails`, `/domains`, `/api-keys`, `/webhooks`, `/suppressions` and the
-event and attachment lists use the Resend cursor pages (`limit`, `after`,
+`GET /emails`, `/domains`, `/api-keys`, `/webhooks`, `/suppressions`,
+`/logs` and the event and attachment lists use the Resend cursor pages (`limit`, `after`,
 `before`).
 
 ### Differences from Resend
@@ -260,7 +268,8 @@ event and attachment lists use the Resend cursor pages (`limit`, `after`,
 | `path` attachments | 10 or fewer in one email. fullsend fetches them one by one.                       |
 | `reply_to`         | Cloudflare sends only the first address.                                          |
 | Missing features   | No templates, audiences, contacts, broadcasts or receiving.                       |
-| Missing endpoints  | No `/logs` and no `POST /emails/:id/share`.                                       |
+| Missing endpoints  | No `POST /emails/:id/share`.                                                      |
+| Logs               | No request body, response body or `user_agent`. The log keeps 14 days.            |
 | Domain `region`    | Only `global`. Any other value gives a 422.                                       |
 | Domain `tls`       | Only `opportunistic`. `enforced` gives a 422.                                     |
 | Domain fields      | `custom_return_path` must be `send`. `tracking_subdomain` gives a 422.            |
@@ -272,6 +281,21 @@ event and attachment lists use the Resend cursor pages (`limit`, `after`,
 | Metrics            | UTC only. No `received`, `unsubscribed` or broadcast data.                        |
 | Webhook events     | Each type is accepted. fullsend does not send contact, topic or receiving events. |
 | Event attempts     | An attempt with no response has `http_status_code` 0.                             |
+
+#### Request log
+
+fullsend writes one log row for each request to a Resend API route. The
+Logs screen and `GET /logs` show the rows. A row has the time, the method,
+the path with its ids, the status, the API key, the time taken and, for an
+error, the error name and message.
+
+The log never stores a request body, a response body, a header or the API
+key. The path has no query string. The `/t` tracking links, `/health`, the
+dashboard `/api` and the static files are not in the log.
+
+The retention job deletes the rows after 14 days. To stop the log, turn off
+"Log API requests" in Settings (the `request_log` setting). The rows that
+exist stay until the retention job deletes them.
 
 > [!NOTE]
 > A deploy that has Cloudflare Access must add each new public path to the

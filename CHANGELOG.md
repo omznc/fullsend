@@ -42,7 +42,21 @@ in Settings and in `GET /health`.
 - `GET /webhooks/:id/events`, the event, its attempts, and
   `POST /webhooks/:id/events/:id/replay`.
 - `GET /emails/metrics`.
+- `GET /logs` and `GET /logs/:id` read the request log, with the shape of
+  the Resend SDK. fullsend stores no body and no `user_agent`, so these
+  fields are `null`. The response body of an error is the Resend error
+  body. Only a full access key can read them.
 - `GET /health` returns the `version` field.
+
+### Request log
+
+- Write one `api_requests` row for each request to a Resend API route.
+  The row has the method, the path, the status, the API key, the time
+  taken, and the error name and message. It has no body, header or key.
+- Keep the rows for 14 days.
+- Add the `request_log` setting (on by default) and a toggle in Settings.
+- Add the Logs screen and `GET /api/logs`. The filters are the status, the
+  method, the API key and a path search.
 
 ### Dashboard API
 
@@ -64,6 +78,7 @@ in Settings and in `GET /health`.
 
 ### Development
 
+- The setup wizard pauses the domain verify loop in a hidden tab.
 - CI runs `wrangler deploy --dry-run` after the build.
 - Add the Renovate configuration. Renovate does nothing until the owner
   installs the Renovate app.
