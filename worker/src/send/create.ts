@@ -1,10 +1,16 @@
 import type { AttachmentMeta, EmailStatus } from "../db/schema";
 import type { Env, SendMessage } from "../env";
-import { eventInsert, fanout, type NewEvent } from "../events/record";
+import {
+  eventInsert,
+  fanout,
+  type NewEvent,
+  recordEvent,
+} from "../events/record";
 import type { ApiKeyRow } from "../keys/service";
 import { domainOf, normalize } from "../lib/address";
 import { ApiError, validation } from "../lib/errors";
 import type { JsonValue } from "../lib/json";
+import { logSystemEvent } from "../lib/system-events";
 import { emailSize, type ValidEmail, validateEmail } from "./validate";
 
 export interface SendContext {
@@ -242,14 +248,44 @@ async function commit(
     }
   } catch (err) {
     // The rows exist but no message is on the queue. Mark them failed, so
-    // the client can retry with a new request.
-    await env.DB.batch(
+    // the client can retry with a new request. The failed event also
+    // sends the email.failed webhook. A failure here must not hide the
+    // queue error.
+    const reason = "fullsend could not put the email on the send queue.";
+
+    const recorded = await Promise.allSettled(
       toSend.map((p) =>
-        env.DB.prepare(
-          "UPDATE emails SET status = 'failed', last_event = 'failed', error = ? WHERE id = ?",
-        ).bind("fullsend could not put the email on the send queue.", p.id),
+        recordEvent(env, p.id, {
+          type: "failed",
+          data: { reason },
+          error: reason,
+        }),
       ),
     );
+
+    // The client gets an error and can retry. So the row must not stay
+    // queued, or the sweep sends it a second time.
+    const lost = toSend.filter((_, i) => recorded[i]?.status === "rejected");
+
+    if (lost.length) {
+      await env.DB.batch(
+        lost.map((p) =>
+          env.DB.prepare(
+            "UPDATE emails SET status = 'failed', last_event = 'failed', error = ? WHERE id = ?",
+          ).bind(reason, p.id),
+        ),
+      );
+    }
+
+    await logSystemEvent(env, {
+      level: "error",
+      source: "send",
+      message: "The enqueue failed. The emails are marked failed.",
+      detail: {
+        ids: toSend.map((p) => p.id),
+        error: err instanceof Error ? err.message : String(err),
+      },
+    });
     throw err;
   }
 
@@ -261,7 +297,17 @@ async function commit(
   );
 
   for (const r of results) {
-    if (r.status === "rejected") console.error("fanout failed", r.reason);
+    if (r.status === "rejected") {
+      await logSystemEvent(env, {
+        level: "error",
+        source: "send",
+        message: "The webhook fanout failed after the enqueue.",
+        detail: {
+          error:
+            r.reason instanceof Error ? r.reason.message : String(r.reason),
+        },
+      });
+    }
   }
 }
 
