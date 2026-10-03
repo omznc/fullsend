@@ -68,8 +68,9 @@ first.
   `GET /api/settings` response and `ui/vite.config.ts` import or read it.
   Do not copy the list. The setup writes these paths into the "fullsend
   API" Access application. The setup reuses an application that already
-  has that name and does not update its paths. So a new public path does
-  not reach a deploy that already has Access. The file has no imports, so
+  has that name and updates its paths. A deploy that already has Access
+  gets a new public path after `POST /api/settings/access/sync-paths`
+  (`src/dashboard/access-paths.ts`). The file has no imports, so
   keep it that way.
 - **The dashboard fails closed.** When Access is set up, the catch-all in
   `src/index.ts` serves no UI to a request without a valid Access JWT. This

@@ -3,8 +3,8 @@
 // bypasses it, the Worker serves the Resend API or the tracking links
 // there, and the dev proxy sends it to the Worker.
 //
-// Add a new public path here only. A deploy that has Access already does
-// not get the new path (see setup.ts).
+// Add a new public path here only. A deploy that has Access already gets
+// the new path after POST /api/settings/access/sync-paths.
 export const PUBLIC_PATHS: readonly string[] = [
   "/emails",
   "/domains",

@@ -172,13 +172,25 @@ Resend. `Idempotency-Key` and `x-batch-validation` work as in Resend.
 
 **Emails**
 
-| Method  | Path                     |
-| ------- | ------------------------ |
-| `POST`  | `/emails`                |
-| `POST`  | `/emails/batch`          |
-| `GET`   | `/emails`, `/emails/:id` |
-| `PATCH` | `/emails/:id`            |
-| `POST`  | `/emails/:id/cancel`     |
+| Method  | Path                                              |
+| ------- | ------------------------------------------------- |
+| `POST`  | `/emails`                                         |
+| `POST`  | `/emails/batch`                                   |
+| `GET`   | `/emails`, `/emails/:id`                          |
+| `PATCH` | `/emails/:id`                                     |
+| `POST`  | `/emails/:id/cancel`                              |
+| `GET`   | `/emails/:id/attachments`                         |
+| `GET`   | `/emails/:id/attachments/:attachment_id`          |
+| `GET`   | `/emails/:id/attachments/:attachment_id/download` |
+| `GET`   | `/emails/metrics`                                 |
+
+The attachment routes return a `download_url`. The URL is signed and
+expires after one hour. It needs no API key. It returns 404 after the
+retention period deleted the body of the email.
+
+`/emails/metrics` counts the email events in D1. It supports the `period`,
+`domain` and `email` dimensions, the `domain_id` and `email_id` filters and
+all four granularities, in UTC. Each rate is a fraction from 0 to 1.
 
 **Domains**
 
@@ -195,28 +207,68 @@ Resend. `Idempotency-Key` and `x-batch-validation` work as in Resend.
 | -------- | --------------- |
 | `POST`   | `/api-keys`     |
 | `GET`    | `/api-keys`     |
+| `PATCH`  | `/api-keys/:id` |
 | `DELETE` | `/api-keys/:id` |
 
 **Webhooks**
 
-| Method | Path                                  |
-| ------ | ------------------------------------- |
-| `*`    | `/webhooks`, `/webhooks/:id`          |
-| `POST` | `/webhooks/:id/signing-secret/rotate` |
+| Method | Path                                               |
+| ------ | -------------------------------------------------- |
+| `*`    | `/webhooks`, `/webhooks/:id`                       |
+| `POST` | `/webhooks/:id/signing-secret/rotate`              |
+| `GET`  | `/webhooks/:id/events`, `/webhooks/:id/events/:id` |
+| `GET`  | `/webhooks/:id/events/:id/attempts`                |
+| `POST` | `/webhooks/:id/events/:id/replay`                  |
 
 Webhooks use the Resend body and Svix signatures. `resend.webhooks.verify()`
-and the `svix` package check them.
+and the `svix` package check them. A webhook accepts each event type of the
+Resend SDK. fullsend sends the `email.*` events (except `email.received`),
+`suppression.added`, `suppression.removed` and `domain.updated`.
+
+**Suppressions**
+
+| Method   | Path                                 |
+| -------- | ------------------------------------ |
+| `POST`   | `/suppressions`                      |
+| `GET`    | `/suppressions`, `/suppressions/:id` |
+| `DELETE` | `/suppressions/:id`                  |
+| `POST`   | `/suppressions/batch/add`            |
+| `POST`   | `/suppressions/batch/remove`         |
+
+In a `:id` position, a suppression route accepts an id or an email address.
+
+**Lists**
+
+`GET /emails`, `/domains`, `/api-keys`, `/webhooks`, `/suppressions` and the
+event and attachment lists use the Resend cursor pages (`limit`, `after`,
+`before`).
 
 ### Differences from Resend
 
-| Area             | fullsend                                                       |
-| ---------------- | -------------------------------------------------------------- |
-| Email size       | 5 MiB or less, with attachments. This is the Cloudflare limit. |
-| `reply_to`       | Cloudflare sends only the first address.                       |
-| Missing features | No templates, audiences, contacts, broadcasts or receiving.    |
-| Tracking         | Open and click tracking are on by default for a new domain.    |
-| Domains          | Must be in a Cloudflare zone of the same account.              |
-| Rate limit       | The limit per key has steps of 10 requests per second.         |
+| Area               | fullsend                                                                          |
+| ------------------ | --------------------------------------------------------------------------------- |
+| Email size         | 5 MiB or less, with attachments. This is the Cloudflare limit.                    |
+| `path` attachments | 10 or fewer in one email. fullsend fetches them one by one.                       |
+| `reply_to`         | Cloudflare sends only the first address.                                          |
+| Missing features   | No templates, audiences, contacts, broadcasts or receiving.                       |
+| Missing endpoints  | No `/logs` and no `POST /emails/:id/share`.                                       |
+| Domain `region`    | Only `global`. Any other value gives a 422.                                       |
+| Domain `tls`       | Only `opportunistic`. `enforced` gives a 422.                                     |
+| Domain fields      | `custom_return_path` must be `send`. `tracking_subdomain` gives a 422.            |
+| Tracking           | Open and click tracking are on by default for a new domain.                       |
+| Domains            | Must be in a Cloudflare zone of the same account.                                 |
+| Rate limit         | The limit per key has steps of 10 requests per second.                            |
+| Suppression ids    | An id is `sup_` and the base64url address, not a UUID.                            |
+| Suppression batch  | 100 addresses or fewer in one request.                                            |
+| Metrics            | UTC only. No `received`, `unsubscribed` or broadcast data.                        |
+| Webhook events     | Each type is accepted. fullsend does not send contact, topic or receiving events. |
+| Event attempts     | An attempt with no response has `http_status_code` 0.                             |
+
+> [!NOTE]
+> A deploy that has Cloudflare Access must add each new public path to the
+> "fullsend API" Access application. After an update, send
+> `POST /api/settings/access/sync-paths` from the dashboard session. The
+> setup does the same when it reuses the application.
 
 ---
 
