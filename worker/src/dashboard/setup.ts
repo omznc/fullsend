@@ -9,6 +9,7 @@ import { setupCode } from "../lib/secrets";
 import { getSettings, type Settings, setSettings } from "../lib/settings";
 import { PUBLIC_PATHS } from "../public-paths";
 import {
+  AccessSyncError,
   apiAppInput,
   isApiApp,
   rememberPaths,
@@ -414,11 +415,21 @@ setupRoutes.post("/setup/access/auto", requireSetup, async (c) => {
     const api =
       existingApi ?? (await cf.createAccessApp(apiAppInput(hostname)));
 
-    // An app from an older version has the old paths. Update it.
-    if (existingApi) await syncApiApp(c.env, cf, existingApi, hostname);
-    else await rememberPaths(c.env);
-
     steps.push({ step: "api_app", ok: true, detail: api.id });
+
+    // An app from an older version has the old paths. Update it. A failed
+    // sync is a failed step. The rest of the setup goes on.
+    if (existingApi) {
+      try {
+        await syncApiApp(c.env, cf, existingApi, hostname);
+        steps.push({ step: "api_paths", ok: true, detail: "updated" });
+      } catch (err) {
+        if (!(err instanceof AccessSyncError || err instanceof CloudflareError))
+          throw err;
+
+        steps.push({ step: "api_paths", ok: false, detail: err.message });
+      }
+    } else await rememberPaths(c.env);
 
     await setSettings(c.env, {
       api_hostname: hostname,

@@ -740,61 +740,88 @@ describe("Access path sync", () => {
     cookie = `fs_session=${await signToken(env, "admin", 600, hash)}`;
   });
 
+  const bypass = {
+    id: "pol1",
+    uid: "pol1",
+    precedence: 1,
+    name: "public",
+    decision: "bypass",
+    include: [{ everyone: {} }],
+    exclude: [],
+    require: [],
+    reusable: false,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  };
+
   const oldApp = {
     id: "api1",
+    uid: "api1",
     name: "fullsend API",
     aud: "aud-api",
     domain: "email.example.com/emails",
     type: "self_hosted",
     app_launcher_visible: false,
-    policies: [{ id: "pol1", precedence: 1 }],
+    session_duration: "6h",
+    cors_headers: { allow_all_origins: true },
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    policies: [bypass],
+    destinations: OLD_PATHS.flatMap((p) => [
+      { type: "public", uri: `email.example.com${p}` },
+      { type: "public", uri: `email.example.com${p}/*` },
+    ]),
   };
+
+  // A fake application API that keeps the state: a PUT changes what the
+  // next GET returns. `mutate` can change what a PUT stores.
+  const statefulApp = (
+    start: JsonObject,
+    puts: JsonObject[],
+    mutate: (body: JsonObject) => JsonObject = (b) => b,
+    others: JsonObject[] = [],
+  ) => {
+    let current = start;
+
+    return {
+      [`GET /accounts/${ACCOUNT}/access/apps`]: () => ({
+        result: [...others, current],
+      }),
+      [`GET /accounts/${ACCOUNT}/access/apps/api1`]: () => ({
+        result: current,
+      }),
+      [`PUT /accounts/${ACCOUNT}/access/apps/api1`]: (c: Call) => {
+        if (!isJsonObject(c.body)) return null;
+        puts.push(c.body);
+        current = { ...start, ...mutate(c.body) };
+
+        return { result: current };
+      },
+    };
+  };
+
+  const syncPaths = () =>
+    request("/api/settings/access/sync-paths", { method: "POST", headers });
+
+  const storedPaths = () =>
+    env.DB.prepare(
+      "SELECT value FROM settings WHERE key = 'access_paths'",
+    ).first<{ value: string }>();
 
   const settingsJson = async () =>
     z
       .object({ access: z.object({ paths_current: z.boolean().nullable() }) })
       .parse(await (await request("/api/settings")).json());
 
-  it("sets the destinations of an old application to the current paths", async () => {
-    const puts: JsonValue[] = [];
+  it("sets the destinations and keeps the other fields", async () => {
+    const puts: JsonObject[] = [];
 
-    fake = fakeCloudflare({
-      [`GET /accounts/${ACCOUNT}/access/apps`]: [
-        {
-          id: "dash1",
-          name: "fullsend dashboard",
-          aud: "aud1",
-          domain: "email.example.com",
-        },
-        {
-          ...oldApp,
-          destinations: OLD_PATHS.flatMap((p) => [
-            { type: "public", uri: `email.example.com${p}` },
-            { type: "public", uri: `email.example.com${p}/*` },
-          ]),
-        },
-        {
-          id: "other",
-          name: "fullsend API",
-          aud: "x",
-          domain: "other.example.com/emails",
-        },
-      ],
-      [`GET /accounts/${ACCOUNT}/access/apps/api1`]: oldApp,
-      [`PUT /accounts/${ACCOUNT}/access/apps/api1`]: (c: Call) => {
-        puts.push(c.body);
-
-        return { result: { ...oldApp } };
-      },
-    });
+    fake = fakeCloudflare(statefulApp(oldApp, puts));
 
     // The paths are not written yet, so they are not current.
     expect((await settingsJson()).access.paths_current).toBe(false);
 
-    const res = await request("/api/settings/access/sync-paths", {
-      method: "POST",
-      headers,
-    });
+    const res = await syncPaths();
 
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true });
@@ -805,7 +832,9 @@ describe("Access path sync", () => {
         name: z.string(),
         type: z.string(),
         domain: z.string(),
-        policies: z.array(z.object({ id: z.string(), precedence: z.number() })),
+        session_duration: z.string(),
+        cors_headers: z.object({ allow_all_origins: z.boolean() }),
+        policies: z.array(z.looseObject({ id: z.string() })),
         destinations: z.array(z.object({ type: z.string(), uri: z.string() })),
       })
       .parse(puts[0]);
@@ -814,8 +843,26 @@ describe("Access path sync", () => {
       name: "fullsend API",
       type: "self_hosted",
       domain: "email.example.com/emails",
-      policies: [{ id: "pol1", precedence: 1 }],
+      session_duration: "6h",
+      cors_headers: { allow_all_origins: true },
     });
+
+    // The inline policy goes back in full, without the read-only fields.
+    expect(body.policies).toEqual([
+      {
+        id: "pol1",
+        precedence: 1,
+        name: "public",
+        decision: "bypass",
+        include: [{ everyone: {} }],
+        exclude: [],
+        require: [],
+      },
+    ]);
+
+    expect(puts[0]).not.toHaveProperty("aud");
+    expect(puts[0]).not.toHaveProperty("id");
+    expect(puts[0]).not.toHaveProperty("created_at");
 
     const uris = body.destinations.map((d) => d.uri);
     expect(uris).toContain("email.example.com/suppressions");
@@ -824,6 +871,90 @@ describe("Access path sync", () => {
     expect(uris.every((u) => u.startsWith("email.example.com/"))).toBe(true);
 
     expect((await settingsJson()).access.paths_current).toBe(true);
+  });
+
+  it("sends a reusable policy as a link", async () => {
+    const puts: JsonObject[] = [];
+
+    const linked = { ...bypass, reusable: true };
+
+    // Cloudflare returns the linked policy in full, as the GET did.
+    fake = fakeCloudflare(
+      statefulApp({ ...oldApp, policies: [linked] }, puts, (b) => ({
+        ...b,
+        policies: [linked],
+      })),
+    );
+
+    expect((await syncPaths()).status).toBe(200);
+    expect(puts[0]?.policies).toEqual([{ id: "pol1", precedence: 1 }]);
+  });
+
+  it("does not write when there is no public bypass policy", async () => {
+    const puts: JsonObject[] = [];
+
+    const owner = {
+      ...bypass,
+      decision: "allow",
+      include: [{ email: { email: "o@example.com" } }],
+    };
+
+    fake = fakeCloudflare(statefulApp({ ...oldApp, policies: [owner] }, puts));
+
+    const res = await syncPaths();
+
+    expect(res.status).toBe(422);
+
+    expect(await res.json()).toMatchObject({
+      error: "access_sync",
+      message: expect.stringContaining("no public bypass policy"),
+    });
+
+    expect(puts).toHaveLength(0);
+    expect((await storedPaths())?.value).toBeUndefined();
+  });
+
+  it("puts the original back when the check fails", async () => {
+    const puts: JsonObject[] = [];
+
+    // Cloudflare drops the new destinations, so the check fails. The
+    // second PUT is the undo: it stores what the first copy had.
+    let count = 0;
+
+    fake = fakeCloudflare(
+      statefulApp(oldApp, puts, (body) => {
+        count += 1;
+
+        return count === 1 ? { ...body, destinations: [] } : body;
+      }),
+    );
+
+    const res = await syncPaths();
+
+    expect(res.status).toBe(422);
+
+    expect(await res.json()).toMatchObject({
+      error: "access_sync",
+      message: expect.stringContaining("The sync was undone"),
+    });
+
+    expect(puts).toHaveLength(2);
+
+    const undo = z
+      .object({
+        domain: z.string(),
+        destinations: z.array(z.object({ uri: z.string() })),
+        policies: z.array(z.looseObject({ decision: z.string() })),
+      })
+      .parse(puts[1]);
+
+    expect(undo.domain).toBe("email.example.com/emails");
+    expect(undo.destinations.map((d) => d.uri)).toEqual(
+      oldApp.destinations.map((d) => d.uri),
+    );
+    expect(undo.policies[0]?.decision).toBe("bypass");
+    expect((await storedPaths())?.value).toBeUndefined();
+    expect((await settingsJson()).access.paths_current).toBe(false);
   });
 
   it("needs the header, a session and a Cloudflare app", async () => {
@@ -869,9 +1000,19 @@ describe("Access path sync", () => {
     expect(await res.json()).toMatchObject({ error: "cloudflare" });
   });
 
-  it("updates the API application that the setup finds", async () => {
-    const puts: string[] = [];
+  const dashboardApp = {
+    id: "dash1",
+    name: "fullsend dashboard",
+    aud: "aud1",
+    domain: "email.example.com",
+  };
 
+  // Runs the automatic setup against an API application that exists.
+  async function setupWith(
+    puts: JsonObject[],
+    app: JsonObject,
+    mutate?: (body: JsonObject) => JsonObject,
+  ) {
     fake = fakeCloudflare({
       "GET /zones": [ZONE],
       [`GET /accounts/${ACCOUNT}/access/organizations`]: {
@@ -886,21 +1027,7 @@ describe("Access path sync", () => {
           zone_id: "zone1",
         },
       ],
-      [`GET /accounts/${ACCOUNT}/access/apps`]: [
-        {
-          id: "dash1",
-          name: "fullsend dashboard",
-          aud: "aud1",
-          domain: "email.example.com",
-        },
-        oldApp,
-      ],
-      [`GET /accounts/${ACCOUNT}/access/apps/api1`]: oldApp,
-      [`PUT /accounts/${ACCOUNT}/access/apps/api1`]: (c: Call) => {
-        puts.push(c.path);
-
-        return { result: oldApp };
-      },
+      ...statefulApp(app, puts, mutate, [dashboardApp]),
     });
 
     // The reuse branch needs the setup to be open.
@@ -920,7 +1047,7 @@ describe("Access path sync", () => {
 
     const setupCookie = (unlock.headers.get("Set-Cookie") ?? "").split(";")[0]!;
 
-    const res = await worker.fetch(
+    return worker.fetch(
       new Request(`${BASE}/api/setup/access/auto`, {
         method: "POST",
         headers: { ...headers, Cookie: setupCookie },
@@ -932,21 +1059,57 @@ describe("Access path sync", () => {
       cfEnv,
       createExecutionContext(),
     );
+  }
+
+  it("updates the API application that the setup finds", async () => {
+    const puts: JsonObject[] = [];
+    const res = await setupWith(puts, oldApp);
 
     expect(res.status).toBe(200);
     // The application is reused, not created again, and it gets the paths.
     expect(
-      fake.calls.some(
+      fake?.calls.some(
         (c) => c.method === "POST" && c.path.endsWith("/access/apps"),
       ),
     ).toBe(false);
-    expect(puts).toEqual([`/accounts/${ACCOUNT}/access/apps/api1`]);
+    expect(puts).toHaveLength(1);
 
-    const stored = await env.DB.prepare(
-      "SELECT value FROM settings WHERE key = 'access_paths'",
-    ).first<{ value: string }>();
+    expect((await storedPaths())?.value).toBe(PUBLIC_PATHS.join(","));
+  });
 
-    expect(stored?.value).toBe(PUBLIC_PATHS.join(","));
+  it("reports a failed path sync as a failed step", async () => {
+    const puts: JsonObject[] = [];
+
+    const owner = {
+      ...bypass,
+      decision: "allow",
+      include: [{ email: { email: "o@example.com" } }],
+    };
+
+    const res = await setupWith(puts, { ...oldApp, policies: [owner] });
+
+    // The rest of the setup goes on.
+    expect(res.status).toBe(200);
+
+    const body = z
+      .object({
+        ok: z.boolean(),
+        steps: z.array(
+          z.object({ step: z.string(), ok: z.boolean(), detail: z.string() }),
+        ),
+      })
+      .parse(await res.json());
+
+    expect(body.ok).toBe(true);
+
+    expect(body.steps.find((s) => s.step === "api_paths")).toMatchObject({
+      ok: false,
+      detail: expect.stringContaining("no public bypass policy"),
+    });
+
+    expect(body.steps.at(-1)?.step).toBe("policy");
+    expect(puts).toHaveLength(0);
+    expect((await storedPaths())?.value).toBeUndefined();
   });
 });
 

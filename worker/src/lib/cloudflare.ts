@@ -2,7 +2,7 @@
 // and CF_ACCOUNT_ID.
 
 import type { Env } from "../env";
-import type { JsonValue } from "./json";
+import type { JsonObject, JsonValue } from "./json";
 
 const BASE = "https://api.cloudflare.com/client/v4";
 
@@ -252,12 +252,14 @@ export class Cloudflare {
     return this.call(`${this.acct}/access/apps`);
   }
 
-  accessApp(id: string): Promise<AccessApp> {
+  // The full application, as Cloudflare returns it. The caller parses it.
+  accessApp(id: string): Promise<JsonValue> {
     return this.call(`${this.acct}/access/apps/${id}`);
   }
 
-  // Replaces the application. The body is a full application.
-  updateAccessApp(id: string, body: AccessAppInput): Promise<AccessApp> {
+  // Replaces the application. A field that the body leaves out goes back
+  // to its default, so the body must be a full application.
+  updateAccessApp(id: string, body: AccessAppUpdate): Promise<AccessApp> {
     return this.call(`${this.acct}/access/apps/${id}`, {
       method: "PUT",
       body: JSON.stringify(body),
@@ -382,6 +384,18 @@ export interface AccessAppInput {
   // A new policy, or a policy that exists already.
   policies: (AccessPolicy | { id: string; precedence?: number })[];
 }
+
+// The body of PUT /access/apps/:id. `JsonObject` holds the other writable
+// fields of the application, which the sync copies from the GET.
+export type AccessAppUpdate = JsonObject & {
+  name: string;
+  type: string;
+  domain: string;
+  destinations: JsonObject[];
+  // Each item is an application-scoped policy in full, or the reusable
+  // form { id, precedence }.
+  policies: JsonObject[];
+};
 
 export interface AccessPolicy {
   name: string;

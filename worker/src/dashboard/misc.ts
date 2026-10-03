@@ -26,7 +26,12 @@ import {
   removeSuppressions,
 } from "../suppressions/service";
 import { VERSION } from "../version";
-import { API_APP_NAME, isApiApp, syncApiApp } from "./access-paths";
+import {
+  AccessSyncError,
+  API_APP_NAME,
+  isApiApp,
+  syncApiApp,
+} from "./access-paths";
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
 import { dashDomain } from "./domains";
 import { FAILURES_SQL } from "./failures-sql";
@@ -767,6 +772,10 @@ miscRoutes.post("/settings/access/sync-paths", async (c) => {
 
     return c.json({ ok: true, public_paths: PUBLIC_PATHS });
   } catch (err) {
+    if (err instanceof AccessSyncError) {
+      return c.json({ error: "access_sync", message: err.message }, 422);
+    }
+
     if (err instanceof CloudflareError) {
       return c.json(
         { error: "cloudflare", message: `Cloudflare: ${err.message}` },
