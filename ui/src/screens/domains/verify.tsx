@@ -3,8 +3,8 @@ import { api, type Domain, type DomainRecord } from "../../api";
 import { errorText, Icon } from "../../components/ui";
 import { useInterval, useNow } from "../../lib/hooks";
 
-// The client checks DNS while a page is open. The Worker runs no
-// background check.
+// The client checks DNS while a page is open. The Worker cron also syncs
+// each domain every 15 minutes, so a closed page does not stop the check.
 const FAST_MS = 10_000;
 
 const SLOW_MS = 60_000;
