@@ -360,31 +360,35 @@ export function WebhookDetail({ id }: { id: string }) {
             })
           }
         />
-        <Select
-          aria-label="Event type"
-          value={type ?? ""}
-          options={[
-            { value: "", label: "all events" },
-            ...(w?.events ?? []).map((e) => ({ value: e, label: e })),
-          ]}
-          onChange={(v) =>
-            setQuery({
-              event_type: v || null,
-              after: null,
-              before: null,
-              delivery: null,
-            })
-          }
-          className="h-8 w-[200px]"
-        />
+        <div className="w-[200px]">
+          <Select
+            aria-label="Event type"
+            value={type ?? ""}
+            options={[
+              { value: "", label: "all events" },
+              ...(w?.events ?? []).map((e) => ({ value: e, label: e })),
+            ]}
+            onChange={(v) =>
+              setQuery({
+                event_type: v || null,
+                after: null,
+                before: null,
+                delivery: null,
+              })
+            }
+            className="h-8"
+          />
+        </div>
         <span className="flex-1" />
-        <Select
-          aria-label="Send again the calls that failed in"
-          value={windowHours}
-          options={WINDOWS.map(({ value, label }) => ({ value, label }))}
-          onChange={setWindowHours}
-          className="h-8 w-[150px]"
-        />
+        <div className="w-[150px]">
+          <Select
+            aria-label="Send again the calls that failed in"
+            value={windowHours}
+            options={WINDOWS.map(({ value, label }) => ({ value, label }))}
+            onChange={setWindowHours}
+            className="h-8"
+          />
+        </div>
         <Button
           icon="reload"
           size="sm"

@@ -365,6 +365,7 @@ const event = wh.verify(rawBody, {
             <code className={code}>resend.webhooks.verify()</code> check them.
             {events.length > 0 && (
               <>
+                {" "}
                 The events are{" "}
                 {events.map((e, i) => (
                   <Fragment key={e}>

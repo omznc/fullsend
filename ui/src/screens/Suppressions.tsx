@@ -97,13 +97,15 @@ export function Suppressions() {
   const counts = list.data?.counts ?? {};
   const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
 
+  // The known reasons in a fixed order, then any other reason. Only a
+  // reason that has addresses shows.
   const chips = [
     { value: null, label: "all", n: total },
-    ...Object.keys(counts).map((k) => ({
-      value: k,
-      label: reasonOf(k).label,
-      n: counts[k] ?? 0,
-    })),
+    ...[...new Set([...REASONS.keys(), ...Object.keys(counts)])].flatMap((k) =>
+      k in counts
+        ? [{ value: k, label: reasonOf(k).label, n: counts[k] ?? 0 }]
+        : [],
+    ),
   ];
 
   const filtered = q !== "" || reason !== null;
