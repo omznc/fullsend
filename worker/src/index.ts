@@ -17,6 +17,7 @@ import type { Env, HookMessage, SendMessage } from "./env";
 import { handleEventsBatch } from "./events/consumer";
 import { ApiError, errorResponse } from "./lib/errors";
 import { allowedMethods, isHostname, methodNotAllowed } from "./lib/http";
+import { noteFailure, requestLog } from "./lib/request-log";
 import { getSettings, getSettingsCached } from "./lib/settings";
 import { errorText } from "./lib/system-events";
 import { PUBLIC_PATHS } from "./public-paths";
@@ -30,7 +31,12 @@ export { FullsendRpc } from "./rpc";
 const app = new Hono<DashVars>();
 
 app.onError((err, c) => {
-  if (err instanceof ApiError) return errorResponse(err);
+  if (err instanceof ApiError) {
+    noteFailure(c.req.raw, err);
+
+    return errorResponse(err);
+  }
+
   console.error(
     JSON.stringify({
       evt: "unhandled_error",
@@ -40,13 +46,15 @@ app.onError((err, c) => {
     }),
   );
 
-  return errorResponse(
-    new ApiError(
-      500,
-      "internal_server_error",
-      "Internal server error. We are unable to process your request right now, please try again later.",
-    ),
+  const failure = new ApiError(
+    500,
+    "internal_server_error",
+    "Internal server error. We are unable to process your request right now, please try again later.",
   );
+
+  noteFailure(c.req.raw, failure);
+
+  return errorResponse(failure);
 });
 
 // The tracking hostname serves only the tracking links.
@@ -68,6 +76,9 @@ app.use(async (c, next) => {
 app.get("/health", (c) => c.json({ ok: true, version: VERSION }));
 
 app.route("/t", trackingRoutes);
+
+// The request log. It sits after /t and /health, which it does not log.
+app.use(requestLog);
 
 app.route("/emails", emailsApi);
 

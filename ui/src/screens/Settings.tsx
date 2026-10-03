@@ -585,6 +585,19 @@ function Content({ data, reload }: { data: SettingsData; reload: Reload }) {
         />
       </Section>
       <Section
+        icon="list-box"
+        title="Request log"
+        help="The Logs screen shows each API request for 14 days. It stores the method, path, status, key and error. It never stores bodies or headers."
+      >
+        <ToggleRow
+          label="Log API requests"
+          hint="the Resend API routes only"
+          name="request_log"
+          value={s.request_log === "true"}
+          onSaved={reload}
+        />
+      </Section>
+      <Section
         icon="server"
         title="Deploy"
         help="The name of this deploy, shown in the dashboard."

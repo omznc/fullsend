@@ -26,6 +26,8 @@ export const DEFAULTS = {
   default_rate_limit: "10",
   default_open_tracking: "true",
   default_click_tracking: "true",
+  // "false" turns off the request log (see src/lib/request-log.ts).
+  request_log: "true",
   deploy_name: "fullsend",
   setup_completed: "false",
 } as const;

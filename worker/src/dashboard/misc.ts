@@ -661,6 +661,7 @@ const EDITABLE: SettingKey[] = [
   "default_rate_limit",
   "default_open_tracking",
   "default_click_tracking",
+  "request_log",
   "deploy_name",
   "setup_completed",
 ];

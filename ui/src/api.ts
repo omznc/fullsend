@@ -376,6 +376,7 @@ export interface Settings {
     default_rate_limit: string;
     default_open_tracking: string;
     default_click_tracking: string;
+    request_log: string;
     deploy_name: string;
     setup_completed: string;
   };
