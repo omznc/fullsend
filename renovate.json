@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "UTC",
+  "minimumReleaseAge": "1 day",
+  "lockFileMaintenance": { "enabled": false },
+  "packageRules": [
+    {
+      "description": "pixelarticons 2.x renamed the icons. Stay on 1.x.",
+      "matchPackageNames": ["pixelarticons"],
+      "allowedVersions": "<2"
+    },
+    {
+      "description": "oxlint and @oxlint/plugins need the same exact version.",
+      "matchPackageNames": ["oxlint", "@oxlint/plugins"],
+      "groupName": "oxlint",
+      "rangeStrategy": "pin"
+    },
+    {
+      "description": "Update the Cloudflare packages together.",
+      "matchPackageNames": ["wrangler", "@cloudflare/*"],
+      "groupName": "cloudflare"
+    }
+  ]
+}
