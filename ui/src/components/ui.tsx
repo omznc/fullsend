@@ -800,6 +800,52 @@ export function Indicator({ fill }: { fill?: boolean }) {
   );
 }
 
+// The keys of a group with a roving tabindex: the arrow keys, Home and End
+// move the focus to another item of that role and select it. Set
+// tabIndex 0 on the selected item and -1 on the others.
+export function rovingKeys(
+  role: "tab" | "radio",
+  select: (index: number) => void,
+) {
+  return (e: ReactKeyboardEvent<HTMLElement>) => {
+    const items = [
+      ...e.currentTarget.querySelectorAll<HTMLElement>(`[role="${role}"]`),
+    ];
+
+    const at = items.findIndex((el) => el === document.activeElement);
+    const last = items.length - 1;
+    let next = -1;
+
+    if (at < 0) return;
+
+    if (e.key === "ArrowRight" || e.key === "ArrowDown")
+      next = at === last ? 0 : at + 1;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp")
+      next = at === 0 ? last : at - 1;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = last;
+
+    if (next < 0) return;
+    e.preventDefault();
+    items[next]?.focus();
+    select(next);
+  };
+}
+
+// The ids that tie a tab to its panel. A tab gets aria-controls, and the
+// panel gets role tabpanel and aria-labelledby.
+export function tabIds(id: string, value: string) {
+  return { tab: `${id}-tab-${value}`, panel: `${id}-panel` };
+}
+
+export function tabPanelProps(id: string, value: string) {
+  return {
+    role: "tabpanel",
+    id: tabIds(id, value).panel,
+    "aria-labelledby": tabIds(id, value).tab,
+  } as const;
+}
+
 // A row of options, one of them selected. For periods and tabs.
 export function Segmented<T extends string>({
   value,
@@ -819,6 +865,11 @@ export function Segmented<T extends string>({
       ref={ref}
       role="radiogroup"
       aria-label={label}
+      onKeyDown={rovingKeys("radio", (i) => {
+        const o = options[i];
+
+        if (o) onChange(o.value);
+      })}
       className="relative flex"
     >
       <Indicator fill />
@@ -828,6 +879,7 @@ export function Segmented<T extends string>({
           type="button"
           role="radio"
           aria-checked={o.value === value}
+          tabIndex={o.value === value ? 0 : -1}
           onClick={() => onChange(o.value)}
           className={cx(
             "relative h-8 border border-line2 bg-transparent px-2.5 font-mono text-[12px]",
@@ -843,12 +895,16 @@ export function Segmented<T extends string>({
 }
 
 // Tabs under a page header, with the lime bar under the current tab.
+// With `id`, each tab has an id and aria-controls. Give the panel
+// tabPanelProps(id, value).
 export function Tabs<T extends string>({
+  id,
   value,
   tabs,
   onChange,
   className,
 }: {
+  id?: string;
   value: T;
   tabs: { value: T; label: ReactNode; count?: number }[];
   onChange: (v: T) => void;
@@ -860,6 +916,11 @@ export function Tabs<T extends string>({
     <div
       ref={ref}
       role="tablist"
+      onKeyDown={rovingKeys("tab", (i) => {
+        const t = tabs[i];
+
+        if (t) onChange(t.value);
+      })}
       className={cx(
         "relative flex items-stretch border-b border-line",
         className,
@@ -871,7 +932,10 @@ export function Tabs<T extends string>({
           key={t.value}
           type="button"
           role="tab"
+          id={id ? tabIds(id, t.value).tab : undefined}
+          aria-controls={id ? tabIds(id, t.value).panel : undefined}
           aria-selected={t.value === value}
+          tabIndex={t.value === value ? 0 : -1}
           onClick={() => onChange(t.value)}
           className={cx(
             "flex h-10 items-center gap-1.5 border-0 bg-transparent px-3.5 font-mono text-[12.5px] font-medium",
@@ -1563,6 +1627,7 @@ export function CodeBlock({
   const [i, setI] = useState(0);
   const tab = tabs[Math.min(i, tabs.length - 1)]!;
   const bar = useIndicator<HTMLDivElement>();
+  const id = useId();
 
   return (
     <div className={cx("min-w-0 border border-line bg-panel", className)}>
@@ -1570,6 +1635,7 @@ export function CodeBlock({
         <div
           ref={bar}
           role="tablist"
+          onKeyDown={rovingKeys("tab", setI)}
           className="relative flex min-w-0 overflow-x-auto"
         >
           <Indicator />
@@ -1578,7 +1644,10 @@ export function CodeBlock({
               key={t.label}
               type="button"
               role="tab"
+              id={tabIds(id, String(n)).tab}
+              aria-controls={tabIds(id, String(n)).panel}
               aria-selected={n === i}
+              tabIndex={n === i ? 0 : -1}
               onClick={() => setI(n)}
               className={cx(
                 "h-10 shrink-0 border-0 bg-transparent px-3.5 font-mono text-[12.5px] font-medium",
@@ -1596,6 +1665,8 @@ export function CodeBlock({
       </div>
       <pre
         key={tab.label}
+        {...tabPanelProps(id, String(Math.min(i, tabs.length - 1)))}
+        tabIndex={0}
         className="fs-fade m-0 overflow-x-auto px-4 py-3.5 font-mono text-[12.5px] leading-5 transition-opacity"
       >
         <Highlight code={tab.code} />

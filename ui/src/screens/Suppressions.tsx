@@ -155,6 +155,7 @@ export function Suppressions() {
             data-list-search
             type="search"
             value={text}
+            aria-label="Search by address"
             placeholder="search address"
             autoCapitalize="none"
             spellCheck={false}

@@ -25,6 +25,9 @@ import {
   SkeletonBlock,
   cx,
   errorText,
+  rovingKeys,
+  tabIds,
+  tabPanelProps,
   useCopy,
   useIndicator,
   useToast,
@@ -743,6 +746,11 @@ function Loaded({
               ref={recipientBar}
               role="tablist"
               aria-label="Recipients"
+              onKeyDown={rovingKeys("tab", (i) => {
+                const r = recipients[i];
+
+                if (r) setPicked(r.addr);
+              })}
               className="relative flex overflow-x-auto border-b border-line px-1 md:px-5"
             >
               <Indicator />
@@ -751,7 +759,10 @@ function Loaded({
                   key={r.addr}
                   type="button"
                   role="tab"
+                  id={tabIds("recipient", r.addr).tab}
+                  aria-controls={tabIds("recipient", r.addr).panel}
                   aria-selected={r === selected}
+                  tabIndex={r === selected ? 0 : -1}
                   onClick={() => setPicked(r.addr)}
                   className={cx(
                     "flex h-12 flex-none items-center gap-2 border-0 bg-transparent px-3 font-mono text-[12.5px]",
@@ -764,12 +775,14 @@ function Loaded({
               ))}
             </div>
             {selected && (
-              <Timeline
-                key={selected.addr}
-                email={email}
-                recipient={selected}
-                now={now}
-              />
+              <div {...tabPanelProps("recipient", selected.addr)}>
+                <Timeline
+                  key={selected.addr}
+                  email={email}
+                  recipient={selected}
+                  now={now}
+                />
+              </div>
             )}
           </section>
 
@@ -1174,6 +1187,11 @@ function BodySection({
           ref={tabBar}
           role="tablist"
           aria-label="Body"
+          onKeyDown={rovingKeys("tab", (i) => {
+            const t = tabs[i];
+
+            if (t) setTab(t.value);
+          })}
           className="relative flex"
         >
           <Indicator />
@@ -1182,7 +1200,10 @@ function BodySection({
               key={t.value}
               type="button"
               role="tab"
+              id={tabIds("body", t.value).tab}
+              aria-controls={tabIds("body", t.value).panel}
               aria-selected={tab === t.value}
+              tabIndex={tab === t.value ? 0 : -1}
               onClick={() => setTab(t.value)}
               className={cx(
                 "h-11 border-0 bg-transparent px-3 font-mono text-[12.5px] font-medium",
@@ -1197,6 +1218,9 @@ function BodySection({
           <div
             role="radiogroup"
             aria-label="Preview width"
+            onKeyDown={rovingKeys("radio", (i) =>
+              setWidth(i === 0 ? "desktop" : "mobile"),
+            )}
             className="flex gap-0.5 pr-3 md:pr-0"
           >
             {(
@@ -1210,6 +1234,7 @@ function BodySection({
                 type="button"
                 role="radio"
                 aria-checked={width === value}
+                tabIndex={width === value ? 0 : -1}
                 aria-label={label}
                 onClick={() => setWidth(value)}
                 className={cx(
@@ -1225,7 +1250,11 @@ function BodySection({
           </div>
         )}
       </div>
-      <div key={tab} className="fs-fade transition-opacity duration-200">
+      <div
+        key={tab}
+        {...tabPanelProps("body", tab)}
+        className="fs-fade transition-opacity duration-200"
+      >
         {content}
       </div>
     </section>

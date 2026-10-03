@@ -29,6 +29,7 @@ import {
   RelTime,
   SkeletonBlock,
   Tabs,
+  tabPanelProps,
   TableHead,
   TableRow,
   useToast,
@@ -256,6 +257,7 @@ export function Emails() {
         }
       />
       <Tabs
+        id="emails"
         value={tab}
         onChange={(t) =>
           setQuery({
@@ -301,6 +303,7 @@ export function Emails() {
         {newCount > 0 ? `${newCount} new emails` : ""}
       </div>
       <div
+        {...tabPanelProps("emails", tab)}
         className="contents"
         onPointerEnter={() => {
           hovering.current = true;

@@ -12,6 +12,7 @@ import {
   Select,
   SkeletonBlock,
   Tabs,
+  tabPanelProps,
   Textarea,
   TextLink,
   cx,
@@ -310,6 +311,7 @@ function Form({ domains }: { domains: Domain[] }) {
           />
         </Row>
         <Tabs
+          id="body"
           className="px-2 md:px-5"
           value={body}
           onChange={setBody}
@@ -319,7 +321,7 @@ function Form({ domains }: { domains: Domain[] }) {
             { value: "preview", label: "preview" },
           ]}
         />
-        <div className="border-b border-line">
+        <div {...tabPanelProps("body", body)} className="border-b border-line">
           {body === "html" && (
             <Textarea
               aria-label="HTML body"
