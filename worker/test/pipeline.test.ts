@@ -5,9 +5,15 @@ import {
 } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { dispatchScheduled, retention } from "../src/cron";
+import {
+  dispatchScheduled,
+  retention,
+  STUCK_AFTER,
+  sweepStuck,
+} from "../src/cron";
 import type { Env, HookMessage, SendMessage } from "../src/env";
 import { handleEvent } from "../src/events/consumer";
+import { logSystemEvent } from "../src/lib/system-events";
 import { handleSendBatch } from "../src/send/consumer";
 import { createEmail } from "../src/send/create";
 import { cancelEmail } from "../src/send/manage";
@@ -633,5 +639,227 @@ describe("cron", () => {
     expect(row?.status).toBe("scheduled");
     expect(row?.body_key).not.toBeNull();
     await cancelEmail(env, id);
+  });
+});
+
+describe("stuck email sweep", () => {
+  const old = () => Date.now() - STUCK_AFTER - 60_000;
+
+  async function queued() {
+    const { id } = await createEmail(
+      env,
+      {
+        from: "a@send.example.com",
+        to: "x@example.net",
+        subject: "s",
+        text: "t",
+      },
+      { apiKeyId: "test" },
+    );
+
+    return id;
+  }
+
+  const set = (id: string, sql: string, ...args: (number | string)[]) =>
+    env.DB.prepare(`UPDATE emails SET ${sql} WHERE id = ?`)
+      .bind(...args, id)
+      .run();
+
+  const queuedIds = () =>
+    queueSpy.mock.calls.flatMap((c) => [...c[0]].map((m) => m.body.emailId));
+
+  const eventTypes = async (id: string) =>
+    (
+      await env.DB.prepare(
+        "SELECT type FROM email_events WHERE email_id = ? ORDER BY created_at",
+      )
+        .bind(id)
+        .all<{ type: string }>()
+    ).results.map((r) => r.type);
+
+  it("records the sent event without a second send", async () => {
+    const id = await queued();
+    // Cloudflare accepted the email long ago, but the event is lost.
+    await set(id, "cf_message_id = 'cf-lost', sent_at = ?", old());
+    queueSpy.mockClear();
+
+    expect((await sweepStuck(env)).recorded).toBeGreaterThanOrEqual(1);
+    expect(queuedIds()).toContain(id);
+
+    // The queue delivers the message to the consumer.
+    let sends = 0;
+
+    const result = await runSend(
+      fakeEnv(async () => (sends++, { messageId: "cf-second" })),
+      id,
+    );
+
+    expect(sends).toBe(0);
+    expect(result.explicitAcks).toContain("m1");
+    expect(await status(id)).toMatchObject({
+      status: "sent",
+      cf_message_id: "cf-lost",
+    });
+    expect(await eventTypes(id)).toContain("sent");
+
+    // The sent email is not swept again.
+    queueSpy.mockClear();
+    await sweepStuck(env);
+    expect(queuedIds()).not.toContain(id);
+  });
+
+  it("puts a lost email back 3 times, then fails it", async () => {
+    const id = await queued();
+    await set(id, "created_at = ?", old());
+
+    for (let n = 1; n <= 3; n++) {
+      queueSpy.mockClear();
+      await sweepStuck(env);
+      expect(queuedIds()).toContain(id);
+
+      const row = await env.DB.prepare(
+        "SELECT sweep_count FROM emails WHERE id = ?",
+      )
+        .bind(id)
+        .first<{ sweep_count: number }>();
+
+      expect(row?.sweep_count).toBe(n);
+      // The sweep marks the time, so the next minute does not repeat it.
+      queueSpy.mockClear();
+      await sweepStuck(env);
+      expect(queuedIds()).not.toContain(id);
+      await set(id, "dispatched_at = ?", old());
+    }
+
+    queueSpy.mockClear();
+    const result = await sweepStuck(env);
+    expect(result.failed).toBeGreaterThanOrEqual(1);
+    expect(queuedIds()).not.toContain(id);
+    expect((await status(id))?.status).toBe("failed");
+    expect(await eventTypes(id)).toContain("failed");
+  });
+
+  it("keeps the row when the queue fails", async () => {
+    const id = await queued();
+    await set(id, "created_at = ?", old());
+    queueSpy.mockRejectedValueOnce(new Error("queue down"));
+    await sweepStuck(env);
+
+    const row = await env.DB.prepare(
+      "SELECT status, sweep_count FROM emails WHERE id = ?",
+    )
+      .bind(id)
+      .first<{ status: string; sweep_count: number }>();
+
+    expect(row).toEqual({ status: "queued", sweep_count: 0 });
+    queueSpy.mockClear();
+    await sweepStuck(env);
+    expect(queuedIds()).toContain(id);
+  });
+
+  it("fails an old claim and never puts it back", async () => {
+    const id = await queued();
+    await set(id, "claimed_at = ?", old());
+    queueSpy.mockClear();
+
+    expect((await sweepStuck(env)).uncertain).toBeGreaterThanOrEqual(1);
+    expect(queuedIds()).not.toContain(id);
+    expect(await status(id)).toMatchObject({ status: "failed" });
+    expect((await status(id))?.error).toContain("Check before you send");
+    expect(await eventTypes(id)).toContain("failed");
+
+    const logged = await env.DB.prepare(
+      "SELECT level, detail FROM system_events WHERE source = 'sweep' AND level = 'error' AND detail LIKE ?",
+    )
+      .bind(`%${id}%`)
+      .first<{ level: string; detail: string }>();
+
+    expect(logged).not.toBeNull();
+  });
+
+  it("leaves a recent email alone", async () => {
+    const id = await queued();
+    queueSpy.mockClear();
+    await sweepStuck(env);
+    expect(queuedIds()).not.toContain(id);
+    expect((await status(id))?.status).toBe("queued");
+  });
+});
+
+describe("failure handling", () => {
+  it("acks a message that cannot get the claim at max attempts", async () => {
+    const { id } = await createEmail(
+      env,
+      {
+        from: "a@send.example.com",
+        to: "x@example.net",
+        subject: "s",
+        text: "t",
+      },
+      { apiKeyId: "test" },
+    );
+
+    await env.DB.prepare("UPDATE emails SET claimed_at = ? WHERE id = ?")
+      .bind(Date.now(), id)
+      .run();
+
+    const e = fakeEnv(async () => ({ messageId: "never" }));
+    expect((await runSend(e, id, 4)).retryMessages).toHaveLength(1);
+
+    const last = await runSend(e, id, 5);
+    expect(last.explicitAcks).toContain("m1");
+    expect(last.retryMessages).toHaveLength(0);
+    expect((await status(id))?.status).toBe("queued");
+  });
+
+  it("records a failed event when the enqueue fails", async () => {
+    queueSpy.mockRejectedValueOnce(new Error("queue down"));
+
+    await expect(
+      createEmail(
+        env,
+        {
+          from: "a@send.example.com",
+          to: "enqueue-fail@example.net",
+          subject: "enqueue-fail",
+          text: "t",
+        },
+        { apiKeyId: "test" },
+      ),
+    ).rejects.toThrow("queue down");
+
+    const row = await env.DB.prepare(
+      "SELECT id, status FROM emails WHERE subject = 'enqueue-fail'",
+    ).first<{ id: string; status: string }>();
+
+    expect(row?.status).toBe("failed");
+
+    const ev = await env.DB.prepare(
+      "SELECT type FROM email_events WHERE email_id = ? AND type = 'failed'",
+    )
+      .bind(row?.id ?? "")
+      .first();
+
+    expect(ev).not.toBeNull();
+
+    const sys = await env.DB.prepare(
+      "SELECT level FROM system_events WHERE source = 'send' AND message LIKE 'The enqueue failed%'",
+    ).first<{ level: string }>();
+
+    expect(sys?.level).toBe("error");
+  });
+
+  it("does not throw when the system event insert fails", async () => {
+    const prepare = vi.spyOn(env.DB, "prepare").mockImplementation(() => {
+      throw new Error("D1 is down");
+    });
+
+    try {
+      await expect(
+        logSystemEvent(env, { level: "warn", source: "test", message: "m" }),
+      ).resolves.toBeUndefined();
+    } finally {
+      prepare.mockRestore();
+    }
   });
 });

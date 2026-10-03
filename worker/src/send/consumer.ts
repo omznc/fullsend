@@ -229,7 +229,9 @@ export function rowToEmail(r: EmailDbRow): EmailRow {
   };
 }
 
-async function fail(
+// Marks the email failed: the failed event, the error text and the
+// email.failed webhooks.
+export async function fail(
   env: Env,
   email: EmailRow,
   reason: string,
@@ -269,6 +271,10 @@ async function sendOne(env: Env, msg: Message<SendMessage>): Promise<void> {
   // A second copy of this message holds the email. Look again later: the
   // copy sends the email, or its claim expires.
   if (!(await claim(env, email.id))) {
+    // The queue must not drop the message at max_retries. Ack it. The
+    // cron sweep (src/cron.ts) handles an email that stays pending.
+    if (msg.attempts >= MAX_ATTEMPTS) return msg.ack();
+
     return msg.retry({ delaySeconds: CLAIM_TTL / 1000 });
   }
 
@@ -394,7 +400,10 @@ async function sendOne(env: Env, msg: Message<SendMessage>): Promise<void> {
   }
 
   // Store the Cloudflare message id first. With it, a retry does not send
-  // the email again.
+  // the email again. A risk stays: if the Worker stops after `send`
+  // returns and before this write, the id is lost. The claim then expires,
+  // and a later copy of the message can send the email a second time. The
+  // Email Sending binding has no idempotency key that closes this window.
   const now = Date.now();
   await env.DB.prepare(
     "UPDATE emails SET cf_message_id = ?, sent_at = ?, claimed_at = NULL WHERE id = ?",

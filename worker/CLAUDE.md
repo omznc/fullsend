@@ -19,8 +19,8 @@ first.
   delivery and Svix signatures. `src/tracking/`: the open pixel and the
   click redirect. `src/domains/`: domains through the Cloudflare API
   (`src/lib/cloudflare.ts`).
-- `src/cron.ts`: one cron each minute. It sends due scheduled emails each
-  minute, syncs the domains each 15 minutes, and runs retention at 03:00
+- `src/cron.ts`: one cron each minute. It sends due scheduled emails and sweeps
+  stuck emails each minute, syncs the domains each 15 minutes, and runs retention at 03:00
   UTC.
 - `scripts/create-key.ts`: makes an API key and its SQL without the
   dashboard. Run it with `node`.
@@ -37,6 +37,16 @@ first.
   it. Other errors retry with backoff up to `MAX_ATTEMPTS` (5). Keep
   `MAX_ATTEMPTS` below `max_retries` of `fullsend-send` in `wrangler.jsonc`,
   so the queue never drops a message.
+- **The cron sweep never puts a claimed email back on the queue.**
+  `sweepStuck` in `src/cron.ts` runs each minute. It handles a pending
+  email that is older than `STUCK_AFTER` (30 minutes). With a
+  `cf_message_id` it records the sent event. With no claim it puts the
+  email on the queue again, 3 times at most, then it fails the email. With
+  an old claim it fails the email and never sends it again: the consumer
+  can stop during `EMAIL.send`. One window stays: if the Worker stops after
+  `send` returns and before `cf_message_id` is stored, a later copy of the
+  message can send the email a second time. Keep the code between `send`
+  and the store short.
 - **The queue handler routes by the message body, not by the queue name.**
   The deploy form can rename the queues. A body with `emailId` goes to the
   send consumer. A body with `webhookId` goes to webhook delivery.
