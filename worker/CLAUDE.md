@@ -63,12 +63,14 @@ first.
 - **Do not hard-code the Worker name or the events queue name.** Use
   `env.WORKER_NAME` and `env.EVENTS_QUEUE_NAME`. The deploy form can change
   them.
-- **`PUBLIC_PATHS` in `src/dashboard/setup.ts` must match the public
-  routes.** The setup writes these paths into the "fullsend API" Access
-  application. The setup reuses an application that already has that name
-  and does not update its paths. So a new public path does not reach a
-  deploy that already has Access. Also add a new public path to the proxy
-  list in `ui/vite.config.ts`.
+- **`PUBLIC_PATHS` in `src/public-paths.ts` is the one list of the public
+  paths.** It must match the public routes. `src/index.ts`, the setup, the
+  `GET /api/settings` response and `ui/vite.config.ts` import or read it.
+  Do not copy the list. The setup writes these paths into the "fullsend
+  API" Access application. The setup reuses an application that already
+  has that name and does not update its paths. So a new public path does
+  not reach a deploy that already has Access. The file has no imports, so
+  keep it that way.
 - **The dashboard fails closed.** When Access is set up, the catch-all in
   `src/index.ts` serves no UI to a request without a valid Access JWT. This
   also covers the `workers.dev` URL. Do not add a route that serves UI

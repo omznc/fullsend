@@ -7,6 +7,7 @@ import { asRecord, isHostname, readJson } from "../lib/http";
 import { isString } from "../lib/json";
 import { setupCode } from "../lib/secrets";
 import { getSettings, type Settings, setSettings } from "../lib/settings";
+import { PUBLIC_PATHS } from "../public-paths";
 import { clearAttempts, takeAttempt } from "./attempts";
 import {
   type DashVars,
@@ -22,17 +23,6 @@ import {
 } from "./auth";
 
 export const setupRoutes = new Hono<DashVars>();
-
-// Paths that Access must keep public: the Resend API and the tracking
-// links. A client with an API key or a mail client cannot log in.
-export const PUBLIC_PATHS = [
-  "/emails",
-  "/domains",
-  "/api-keys",
-  "/webhooks",
-  "/t",
-  "/health",
-];
 
 export const cookieOpts = (maxAge: number) => ({
   httpOnly: true,

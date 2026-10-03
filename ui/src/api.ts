@@ -351,7 +351,11 @@ export interface Settings {
   };
   api_hostname: string | null;
   tracking_hostname: string | null;
-  access: { team_domain: string | null; configured: boolean };
+  access: {
+    team_domain: string | null;
+    configured: boolean;
+    public_paths: string[];
+  };
   cloudflare_token_set: boolean;
   auth_mode: "access" | "password";
 }

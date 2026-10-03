@@ -111,7 +111,8 @@ check. The full list is in `pnpm exec oxlint --print-config`.
 
 ## Dev server
 
-`pnpm dev:ui` runs Vite on port 5173. `vite.config.ts` proxies `/api`,
-`/emails`, `/domains`, `/api-keys`, `/webhooks`, `/t` and `/health` to the
-Worker on port 8787. Start the Worker with `pnpm dev` at the root. The
-proxy list must match the public paths of the Worker.
+`pnpm dev:ui` runs Vite on port 5173. `vite.config.ts` proxies `/api` and
+each path in `PUBLIC_PATHS` to the Worker on port 8787. `PUBLIC_PATHS` is in
+`worker/src/public-paths.ts`, the one list. Start the Worker with `pnpm dev`
+at the root. Do not copy the list into the UI. `Settings.tsx` reads it from
+`GET /api/settings`.

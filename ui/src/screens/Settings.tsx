@@ -34,17 +34,6 @@ import { useTheme, type ThemeChoice } from "../lib/theme";
 
 type Reload = () => Promise<void>;
 
-// The paths that the API Access application keeps public. The list is
-// the same as PUBLIC_PATHS in worker/src/dashboard/setup.ts.
-const PUBLIC_PATHS = [
-  "/emails",
-  "/domains",
-  "/api-keys",
-  "/webhooks",
-  "/t",
-  "/health",
-];
-
 function Section({
   icon,
   title,
@@ -445,7 +434,7 @@ function AccessSection({ data }: { data: SettingsData }) {
             </span>
           </Row>
           <Row label="Public paths" hint="your apps call these with API keys">
-            <Chips items={PUBLIC_PATHS.map((p) => `${p}*`)} />
+            <Chips items={data.access.public_paths.map((p) => `${p}*`)} />
           </Row>
           <Row label="Manage">
             <ButtonLink

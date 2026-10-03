@@ -15,6 +15,7 @@ import {
   setSettings,
 } from "../lib/settings";
 import { DAY, iso, isoOrNull } from "../lib/time";
+import { PUBLIC_PATHS } from "../public-paths";
 import { parseAddressColumn } from "../send/consumer";
 import { parsePage } from "../send/manage";
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
@@ -564,6 +565,7 @@ miscRoutes.get("/settings", async (c) => {
     access: {
       team_domain: s.access_team_domain || null,
       configured: Boolean(s.access_team_domain && s.access_aud),
+      public_paths: PUBLIC_PATHS,
     },
     cloudflare_token_set: hasToken(c.env),
     auth_mode: s.auth_mode === "password" ? "password" : "access",

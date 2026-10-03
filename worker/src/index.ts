@@ -18,6 +18,7 @@ import { ApiError, errorResponse } from "./lib/errors";
 import { isHostname } from "./lib/http";
 import { getSettings, getSettingsCached } from "./lib/settings";
 import { errorText } from "./lib/system-events";
+import { PUBLIC_PATHS } from "./public-paths";
 import { handleSendBatch } from "./send/consumer";
 import { trackingRoutes } from "./tracking/routes";
 import { handleHooksBatch } from "./webhooks/deliver";
@@ -74,7 +75,7 @@ app.route("/api-keys", apiKeysApi);
 
 app.route("/webhooks", webhooksApi);
 
-for (const prefix of ["/emails", "/domains", "/api-keys", "/webhooks"]) {
+for (const prefix of PUBLIC_PATHS) {
   app.all(`${prefix}/*`, () => {
     throw new ApiError(
       404,
