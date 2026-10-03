@@ -416,10 +416,3 @@ export interface AccessInfo {
   hostname_is_workers_dev: boolean;
   public_paths: string[];
 }
-
-export interface AccessAutoResult {
-  ok: boolean;
-  steps: { step: string; ok: boolean; detail?: string }[];
-  login_url?: string;
-  message?: string;
-}

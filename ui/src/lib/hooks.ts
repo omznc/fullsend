@@ -122,20 +122,6 @@ export function useNow(interval = 60_000): number {
   return now;
 }
 
-// Calls fn at an interval while `active` is true.
-export function useInterval(fn: () => void, ms: number | null) {
-  const ref = useRef(fn);
-  useEffect(() => {
-    ref.current = fn;
-  });
-  useEffect(() => {
-    if (ms === null) return;
-    const t = setInterval(() => ref.current(), ms);
-
-    return () => clearInterval(t);
-  }, [ms]);
-}
-
 export interface PollState {
   // True after `max` calls. The poll makes no more calls until restart.
   stopped: boolean;

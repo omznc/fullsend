@@ -44,7 +44,7 @@ check. The full list is in `pnpm exec oxlint --print-config`.
   event handler or a subscription callback. `useApi` in
   `src/lib/hooks.ts` shows the pattern.
 - `react/refs`: do not read or write `ref.current` during render. Do it in
-  an effect or an event handler (see `useInterval`).
+  an effect or an event handler (see `usePoll`).
 - `react/purity`: do not call an impure function such as `Date.now()` or
   `Math.random()` during render. Use `useNow()` from `src/lib/hooks.ts`, or
   a `useState` initializer function.
@@ -77,7 +77,7 @@ check. The full list is in `pnpm exec oxlint --print-config`.
 - `src/screens/` has one file per screen. A large screen has a folder for
   its parts (`domains/`, `webhooks/`, `wizard/`).
 - `src/api.ts` is the client for `/api` and holds the response types.
-  `src/lib/hooks.ts` has `useApi`, `useNow`, `useInterval`, `useNarrow` and
+  `src/lib/hooks.ts` has `useApi`, `useNow`, `usePoll`, `useNarrow` and
   `useTitle`. `src/session.tsx` has `useSession` and `apiBase` (the public
   API URL for snippets).
 - `src/lib/format.ts` formats times, numbers, sizes and addresses.

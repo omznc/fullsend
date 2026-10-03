@@ -1022,29 +1022,6 @@ export function CopyButton({
   );
 }
 
-// A mono value with a copy button after it.
-export function CopyValue({
-  value,
-  display,
-  className,
-}: {
-  value: string;
-  display?: ReactNode;
-  className?: string;
-}) {
-  return (
-    <span
-      className={cx(
-        "inline-flex min-w-0 items-center gap-1.5 font-mono text-[12.5px]",
-        className,
-      )}
-    >
-      <span className="min-w-0 truncate">{display ?? value}</span>
-      <CopyButton text={value} />
-    </span>
-  );
-}
-
 // Relative time with the exact UTC time on hover and focus.
 export function RelTime({
   at,
@@ -2113,29 +2090,6 @@ export function FilterChip({
       <span className="text-fg3">{name}</span> {value}
       <IconButton icon="close" label={`Clear ${name}`} onClick={onClear} />
     </span>
-  );
-}
-
-// Key and value rows, for the side column of a detail page.
-export function Meta({
-  rows,
-  className,
-}: {
-  rows: [ReactNode, ReactNode][];
-  className?: string;
-}) {
-  return (
-    <dl className={cx("m-0 flex flex-col", className)}>
-      {rows.map(([k, v], i) => (
-        <div
-          key={i}
-          className="grid grid-cols-[110px_minmax(0,1fr)] gap-3 border-b border-line py-2 last:border-b-0"
-        >
-          <dt className="text-[13px] text-fg3">{k}</dt>
-          <dd className="m-0 min-w-0 [overflow-wrap:anywhere]">{v}</dd>
-        </div>
-      ))}
-    </dl>
   );
 }
 
