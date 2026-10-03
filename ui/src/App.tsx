@@ -14,6 +14,7 @@ import { Overview } from "./screens/Overview";
 import { Playground } from "./screens/Playground";
 import { Settings } from "./screens/Settings";
 import { Suppressions } from "./screens/Suppressions";
+import { System } from "./screens/System";
 import { WebhookDetail } from "./screens/WebhookDetail";
 import { Webhooks } from "./screens/Webhooks";
 import { Wizard } from "./screens/Wizard";
@@ -33,6 +34,7 @@ const ROUTES: Route[] = [
   ["/suppressions", () => <Suppressions />],
   ["/playground", () => <Playground />],
   ["/docs", () => <Docs />],
+  ["/system", () => <System />],
   ["/settings", () => <Settings />],
 ];
 

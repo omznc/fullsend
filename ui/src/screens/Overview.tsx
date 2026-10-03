@@ -114,52 +114,89 @@ export function Overview() {
   // page without a break. The stats and the chart share the rows next to
   // the rate cards. On a narrow screen the cells stack in this order.
   return (
-    <div className="grid flex-1 grid-cols-[minmax(0,1fr)] content-start lg:grid-cols-[minmax(0,1fr)_420px] lg:grid-rows-[auto_auto_auto_1fr] lg:[grid-template-areas:'story_waffle'_'stats_rates'_'chart_rates'_'fails_domains']">
-      <Story
-        data={data}
-        period={period}
-        shown={data.period}
-        onPeriod={(p) => setQuery({ period: p === "7d" ? null : p })}
-      />
-      <StatRow data={data} />
-      <div
+    <>
+      <SystemNotice events={data.system_events} />
+      <div className="grid flex-1 grid-cols-[minmax(0,1fr)] content-start lg:grid-cols-[minmax(0,1fr)_420px] lg:grid-rows-[auto_auto_auto_1fr] lg:[grid-template-areas:'story_waffle'_'stats_rates'_'chart_rates'_'fails_domains']">
+        <Story
+          data={data}
+          period={period}
+          shown={data.period}
+          onPeriod={(p) => setQuery({ period: p === "7d" ? null : p })}
+        />
+        <StatRow data={data} />
+        <div
+          className={cx(
+            cell,
+            "border-b px-4 pt-4.5 pb-5 md:px-8 lg:[grid-area:chart]",
+          )}
+        >
+          <Chart data={data} period={data.period} />
+        </div>
+        <div className="flex flex-col border-b border-line lg:[grid-area:rates]">
+          <RateCard
+            label="Bounce rate"
+            value={data.bounce_rate.value}
+            level={data.bounce_rate.level}
+            warn={0.02}
+            danger={0.04}
+            scale={0.06}
+            cols="2fr 2fr 2fr"
+            plain="Under 2%, mail providers trust you. Above 4%, they start delaying or rejecting your email."
+          />
+          <RateCard
+            label="Spam report rate"
+            value={data.complaint_rate.value}
+            level={data.complaint_rate.level}
+            warn={0.001}
+            danger={0.003}
+            scale={0.004}
+            cols="1fr 2fr 1fr"
+            plain={`Gmail and Yahoo block senders above 0.3%. ${
+              data.complaint_rate.level === "danger"
+                ? "You are above that."
+                : data.complaint_rate.level === "warning"
+                  ? "You are getting close."
+                  : "You are well below."
+            }`}
+          />
+        </div>
+        <Failures failures={data.recent_failures} />
+        <DomainsColumn domains={data.domains} />
+      </div>
+    </>
+  );
+}
+
+// A quiet line when the Worker logged errors or warnings in the last 7
+// days. It links to the list. With none, it shows nothing.
+function SystemNotice({ events }: { events: OverviewData["system_events"] }) {
+  const { errors, warnings } = events;
+
+  if (errors === 0 && warnings === 0) return null;
+
+  const plural = (n: number, word: string) =>
+    `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  return (
+    <div className="border-b border-line px-4 py-2 md:px-8">
+      <Link
+        href="/system"
         className={cx(
-          cell,
-          "border-b px-4 pt-4.5 pb-5 md:px-8 lg:[grid-area:chart]",
+          "flex items-center gap-2 font-mono text-[12.5px] no-underline",
+          errors > 0 ? "text-red" : "text-amber",
         )}
       >
-        <Chart data={data} period={data.period} />
-      </div>
-      <div className="flex flex-col border-b border-line lg:[grid-area:rates]">
-        <RateCard
-          label="Bounce rate"
-          value={data.bounce_rate.value}
-          level={data.bounce_rate.level}
-          warn={0.02}
-          danger={0.04}
-          scale={0.06}
-          cols="2fr 2fr 2fr"
-          plain="Under 2%, mail providers trust you. Above 4%, they start delaying or rejecting your email."
-        />
-        <RateCard
-          label="Spam report rate"
-          value={data.complaint_rate.value}
-          level={data.complaint_rate.level}
-          warn={0.001}
-          danger={0.003}
-          scale={0.004}
-          cols="1fr 2fr 1fr"
-          plain={`Gmail and Yahoo block senders above 0.3%. ${
-            data.complaint_rate.level === "danger"
-              ? "You are above that."
-              : data.complaint_rate.level === "warning"
-                ? "You are getting close."
-                : "You are well below."
-          }`}
-        />
-      </div>
-      <Failures failures={data.recent_failures} />
-      <DomainsColumn domains={data.domains} />
+        <Icon name={errors > 0 ? "alert" : "warning-box"} size={16} />
+        {errors > 0
+          ? `${plural(errors, "error")} in the last 7 days`
+          : `${plural(warnings, "warning")} in the last 7 days`}
+        {errors > 0 && warnings > 0 && (
+          <span className="text-fg3">and {plural(warnings, "warning")}</span>
+        )}
+        <span className="text-fg2 underline underline-offset-3">
+          see system events
+        </span>
+      </Link>
     </div>
   );
 }

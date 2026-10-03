@@ -287,6 +287,20 @@ export interface Overview {
     at: string;
   }[];
   domains: Domain[];
+  system_events: {
+    errors: number;
+    warnings: number;
+    latest_at: string | null;
+  };
+}
+
+export interface SystemEvent {
+  id: string;
+  created_at: string;
+  level: string;
+  source: string;
+  message: string;
+  detail: JsonValue;
 }
 
 export interface SearchResult {

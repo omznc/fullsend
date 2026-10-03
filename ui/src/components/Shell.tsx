@@ -24,6 +24,7 @@ export const NAV: { label: string; href: string; icon: string }[] = [
   { label: "suppressions", href: "/suppressions", icon: "mail-off" },
   { label: "playground", href: "/playground", icon: "code" },
   { label: "docs", href: "/docs", icon: "book-open" },
+  { label: "system", href: "/system", icon: "alert" },
   { label: "settings", href: "/settings", icon: "sliders" },
 ];
 
