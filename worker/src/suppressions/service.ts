@@ -70,7 +70,7 @@ export function originToReason(origin: string): SuppressionReason | null {
   return null;
 }
 
-function isReason(value: string): value is SuppressionReason {
+export function isReason(value: string): value is SuppressionReason {
   return value in ORIGIN;
 }
 

@@ -267,6 +267,12 @@ export interface Suppression {
   created_at: string;
 }
 
+// The list of the suppressions. `counts` has the rows of each reason for
+// the search, whatever the reason filter and the page are.
+export interface SuppressionList extends List<Suppression> {
+  counts: Record<string, number>;
+}
+
 export interface CfSuppression {
   id: string;
   email: string;

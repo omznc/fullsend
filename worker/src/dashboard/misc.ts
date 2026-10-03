@@ -18,7 +18,12 @@ import {
 import { DAY, iso, isoOrNull } from "../lib/time";
 import { PUBLIC_PATHS } from "../public-paths";
 import { parseAddressColumn } from "../send/consumer";
-import { addSuppressions, removeSuppressions } from "../suppressions/service";
+import {
+  addSuppressions,
+  checkEmails,
+  isReason,
+  removeSuppressions,
+} from "../suppressions/service";
 import { VERSION } from "../version";
 import { API_APP_NAME, isApiApp, syncApiApp } from "./access-paths";
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
@@ -268,8 +273,28 @@ interface SuppressionRow {
 
 miscRoutes.get("/suppressions", async (c) => {
   const q = c.req.query("q")?.trim();
-  const where = q ? ["address LIKE ? ESCAPE '\\'"] : [];
-  const params = q ? [likeContains(q.toLowerCase())] : [];
+  const reason = c.req.query("reason");
+
+  if (reason && !isReason(reason)) {
+    return c.json(
+      {
+        error: "invalid_parameter",
+        message: "The reason must be hard_bounce, complaint or manual.",
+      },
+      422,
+    );
+  }
+
+  const search = q ? ["address LIKE ? ESCAPE '\\'"] : [];
+  const searchParams = q ? [likeContains(q.toLowerCase())] : [];
+  const where = [...search];
+  const params = [...searchParams];
+
+  if (reason) {
+    where.push("reason = ?");
+    params.push(reason);
+  }
+
   // The cursor is the address: the table has no id column.
   const page = parsePage(c.req.query());
   const limit = page.limit ?? 50;
@@ -279,12 +304,21 @@ miscRoutes.get("/suppressions", async (c) => {
     params.push((page.after ?? page.before)!);
   }
 
-  const { results } = await c.env.DB.prepare(
-    `SELECT * FROM suppressions ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+  const [{ results }, grouped] = await Promise.all([
+    c.env.DB.prepare(
+      `SELECT * FROM suppressions ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
      ORDER BY address ${page.before ? "DESC" : "ASC"} LIMIT ?`,
-  )
-    .bind(...params, limit + 1)
-    .all<SuppressionRow>();
+    )
+      .bind(...params, limit + 1)
+      .all<SuppressionRow>(),
+    // The counts for the filter chips follow the search, not the reason.
+    c.env.DB.prepare(
+      `SELECT reason, COUNT(*) AS n FROM suppressions ${search.length ? `WHERE ${search.join(" AND ")}` : ""}
+     GROUP BY reason`,
+    )
+      .bind(...searchParams)
+      .all<{ reason: string; n: number }>(),
+  ]);
 
   const rows = results.slice(0, limit);
 
@@ -292,6 +326,7 @@ miscRoutes.get("/suppressions", async (c) => {
 
   return c.json({
     has_more: results.length > limit,
+    counts: Object.fromEntries(grouped.results.map((r) => [r.reason, r.n])),
     data: rows.map((s) => ({ ...s, created_at: iso(s.created_at) })),
   });
 });
@@ -311,6 +346,39 @@ miscRoutes.post("/suppressions", async (c) => {
   ]);
 
   return c.json({ ok: true });
+});
+
+// Adds up to 100 addresses with one reason. A new address sends a
+// suppression.added event, as the public batch route does. An address that
+// is on the list stays as it is.
+miscRoutes.post("/suppressions/batch", async (c) => {
+  const body = asRecord(await readJson(c));
+  const addresses = checkEmails(body.emails);
+  const reason = body.reason ?? "manual";
+
+  if (!isString(reason) || !isReason(reason)) {
+    return c.json(
+      {
+        error: "invalid_parameter",
+        message: "The reason must be hard_bounce, complaint or manual.",
+      },
+      422,
+    );
+  }
+
+  const added = await addSuppressions(
+    c.env,
+    addresses.map((address) => ({
+      address,
+      reason,
+      source: `dashboard:${c.get("identity")}`,
+    })),
+  );
+
+  return c.json({
+    added: added.length,
+    skipped: addresses.length - added.length,
+  });
 });
 
 miscRoutes.delete("/suppressions/:address", async (c) => {

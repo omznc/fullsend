@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import {
   api,
   type CfSuppression,
-  type List,
   qs,
   type Suppression,
+  type SuppressionList,
 } from "../api";
 import {
   Button,
@@ -21,9 +21,11 @@ import {
   Pager,
   RelTime,
   SectionTitle,
+  Select,
   Skeleton,
   TableHead,
   TableRow,
+  Textarea,
   TextLink,
   useToast,
 } from "../components/ui";
@@ -84,26 +86,22 @@ export function Suppressions() {
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const path = `/suppressions${qs({ q, limit: LIMIT, after, before })}`;
-  const list = useApi<List<Suppression>>(path);
+  const path = `/suppressions${qs({ q, reason, limit: LIMIT, after, before })}`;
+  const list = useApi<SuppressionList>(path);
   const cf = useApi<CfList>("/suppressions/cloudflare");
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<Suppression | null>(null);
 
   const rows = list.data?.data ?? [];
-  const shown = reason ? rows.filter((r) => r.reason === reason) : rows;
-  // The counts are true only when the loaded page is the whole list.
-  const whole = list.data && !list.data.has_more && !after && !before;
-  const counts = new Map<string, number>();
-
-  for (const r of rows) counts.set(r.reason, (counts.get(r.reason) ?? 0) + 1);
+  const counts = list.data?.counts ?? {};
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
 
   const chips = [
-    { value: null, label: "all", n: rows.length },
-    ...[...counts.keys()].map((k) => ({
+    { value: null, label: "all", n: total },
+    ...Object.keys(counts).map((k) => ({
       value: k,
       label: reasonOf(k).label,
-      n: counts.get(k) ?? 0,
+      n: counts[k] ?? 0,
     })),
   ];
 
@@ -119,7 +117,7 @@ export function Suppressions() {
         subtitle="Addresses fullsend will not email. This protects your reputation with mail providers."
         actions={
           <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
-            add address
+            add addresses
           </Button>
         }
       />
@@ -157,7 +155,7 @@ export function Suppressions() {
             }}
           />
         </label>
-        {rows.length > 0 &&
+        {total > 0 &&
           chips.map((c) => {
             const on = (reason ?? null) === c.value;
 
@@ -166,7 +164,9 @@ export function Suppressions() {
                 key={c.label}
                 type="button"
                 aria-pressed={on}
-                onClick={() => setQuery({ reason: c.value })}
+                onClick={() =>
+                  setQuery({ reason: c.value, after: null, before: null })
+                }
                 className={
                   "h-11 border px-2.5 font-mono text-[12px] md:h-9 " +
                   (on
@@ -175,7 +175,7 @@ export function Suppressions() {
                 }
               >
                 {c.label}
-                {whole && ` ${c.n}`}
+                {` ${c.n}`}
               </button>
             );
           })}
@@ -197,7 +197,7 @@ export function Suppressions() {
           <Skeleton rows={6} />
         </>
       )}
-      {list.data && shown.length === 0 && (
+      {list.data && rows.length === 0 && (
         <EmptyState
           icon="shield"
           title={filtered ? "No address matches" : "No suppressed addresses"}
@@ -207,7 +207,7 @@ export function Suppressions() {
             : "fullsend adds an address here after a hard bounce or a complaint. You can also add one by hand."}
         </EmptyState>
       )}
-      {shown.length > 0 && (
+      {rows.length > 0 && (
         <div role="table" aria-label="Suppressed addresses">
           <TableHead
             template={COLS}
@@ -222,7 +222,7 @@ export function Suppressions() {
               "",
             ]}
           />
-          {shown.map((r) => {
+          {rows.map((r) => {
             const why = reasonOf(r.reason);
 
             return (
@@ -278,11 +278,6 @@ export function Suppressions() {
           onNext={() =>
             setQuery({ after: rows[rows.length - 1]?.address, before: null })
           }
-          note={
-            reason && (hasPrev || hasNext)
-              ? "The reason filter applies to this page only."
-              : undefined
-          }
         />
       )}
 
@@ -291,8 +286,8 @@ export function Suppressions() {
       <Dialog
         open={adding}
         onClose={() => setAdding(false)}
-        title="Add address"
-        width={440}
+        title="Add addresses"
+        width={520}
       >
         <AddBody
           onClose={() => setAdding(false)}
@@ -316,6 +311,25 @@ export function Suppressions() {
   );
 }
 
+// The most addresses that the Worker takes in one call.
+const MAX_ADD = 100;
+
+const ADD_REASONS = [
+  { value: "manual", label: "manual: you block it" },
+  { value: "hard_bounce", label: "hard bounce" },
+  { value: "complaint", label: "complaint" },
+];
+
+// One address on each line. Empty lines and repeats do not count.
+const parseLines = (text: string): string[] => [
+  ...new Set(
+    text
+      .split(/\r?\n/)
+      .map((l) => l.trim().toLowerCase())
+      .filter(Boolean),
+  ),
+];
+
 function AddBody({
   onClose,
   onAdded,
@@ -324,51 +338,71 @@ function AddBody({
   onAdded: () => void;
 }) {
   const toast = useToast();
-  const [address, setAddress] = useState("");
+  const [text, setText] = useState("");
+  const [reason, setReason] = useState("manual");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const addresses = parseLines(text);
+  const tooMany = addresses.length > MAX_ADD;
 
-  const submit = () => {
+  const submit = async () => {
     setBusy(true);
     setError(null);
-    api("/suppressions", { method: "POST", body: { address: address.trim() } })
-      .then(
-        () => {
-          toast({ tone: "success", message: `${address.trim()} is blocked.` });
-          onAdded();
-          onClose();
 
-          return undefined;
-        },
-        (cause: unknown) => {
-          setError(errorText(cause));
-          setBusy(false);
+    try {
+      const res = await api<{ added: number; skipped: number }>(
+        "/suppressions/batch",
+        { method: "POST", body: { emails: addresses, reason } },
+      );
 
-          return undefined;
-        },
-      )
-      .then(() => undefined);
+      toast({
+        tone: "success",
+        message:
+          `${res.added} address${res.added === 1 ? "" : "es"} blocked.` +
+          (res.skipped ? ` ${res.skipped} already on the list.` : ""),
+      });
+      onAdded();
+      onClose();
+    } catch (cause) {
+      setError(errorText(cause));
+      setBusy(false);
+    }
   };
 
   return (
     <form
+      className="flex flex-col gap-3.5"
       onSubmit={(e) => {
         e.preventDefault();
-        submit();
+
+        if (addresses.length > 0 && !tooMany) void submit();
       }}
     >
       <Field
-        label="Email address"
-        hint="fullsend will not send email to this address."
-        error={error}
+        label="Email addresses"
+        hint={`One address on each line. ${addresses.length} of ${MAX_ADD}. fullsend will not send email to them.`}
+        error={
+          error ??
+          (tooMany ? `Add ${MAX_ADD} addresses or fewer at a time.` : null)
+        }
       >
-        <Input
+        <Textarea
           autoFocus
-          type="email"
-          value={address}
-          invalid={Boolean(error)}
-          placeholder="name@example.com"
-          onChange={(e) => setAddress(e.target.value)}
+          rows={7}
+          value={text}
+          invalid={Boolean(error) || tooMany}
+          placeholder={"name@example.com\nother@example.com"}
+          autoCapitalize="none"
+          spellCheck={false}
+          onChange={(e) => setText(e.target.value)}
+        />
+      </Field>
+      <Field label="Reason">
+        <Select
+          aria-label="Reason"
+          value={reason}
+          options={ADD_REASONS}
+          onChange={setReason}
         />
       </Field>
       <DialogFooter>
@@ -377,9 +411,11 @@ function AddBody({
           type="submit"
           variant="primary"
           busy={busy}
-          disabled={!address.trim()}
+          disabled={addresses.length === 0 || tooMany}
         >
-          add address
+          {addresses.length > 1
+            ? `add ${addresses.length} addresses`
+            : "add address"}
         </Button>
       </DialogFooter>
     </form>
