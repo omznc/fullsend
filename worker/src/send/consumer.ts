@@ -6,6 +6,7 @@ import { parseAddress } from "../lib/address";
 import { parseJsonText } from "../lib/json";
 import { sessionSecret } from "../lib/secrets";
 import { getSettings, trackingOrigin } from "../lib/settings";
+import { errorText, logSystemEvent } from "../lib/system-events";
 import { addTracking } from "../tracking/rewrite";
 import type { StoredBody } from "./create";
 
@@ -51,9 +52,22 @@ export async function handleSendBatch(
     try {
       await sendOne(env, msg);
     } catch (err) {
-      console.error("send consumer error", msg.body.emailId, err);
+      console.error(
+        JSON.stringify({
+          evt: "send.error",
+          emailId: msg.body.emailId,
+          attempts: msg.attempts,
+          error: errorText(err),
+        }),
+      );
       await giveUp(env, msg, err).catch((e) =>
-        console.error("send consumer give up", msg.body.emailId, e),
+        console.error(
+          JSON.stringify({
+            evt: "send.give_up_failed",
+            emailId: msg.body.emailId,
+            error: errorText(e),
+          }),
+        ),
       );
     }
   }
@@ -394,22 +408,81 @@ async function sendOne(env: Env, msg: Message<SendMessage>): Promise<void> {
       return msg.ack();
     }
 
-    console.warn("send retry", email.id, code, reason);
+    // The reason can name a recipient, so the log has the code only.
+    console.warn(
+      JSON.stringify({
+        evt: "send.retry",
+        emailId: email.id,
+        code,
+        attempts: msg.attempts,
+      }),
+    );
 
     return msg.retry({ delaySeconds: backoff(msg.attempts) });
   }
 
   // Store the Cloudflare message id first. With it, a retry does not send
-  // the email again. A risk stays: if the Worker stops after `send`
-  // returns and before this write, the id is lost. The claim then expires,
-  // and a later copy of the message can send the email a second time. The
-  // Email Sending binding has no idempotency key that closes this window.
+  // the email again. Keep the code between `send` and this write short.
   const now = Date.now();
-  await env.DB.prepare(
-    "UPDATE emails SET cf_message_id = ?, sent_at = ?, claimed_at = NULL WHERE id = ?",
-  )
-    .bind(messageId, now, email.id)
-    .run();
+
+  if (!(await storeMessageId(env, email.id, messageId, now))) {
+    // The email is sent, but D1 did not take the id. Keep the claim and
+    // ack the message: a release or a retry can send the email again. The
+    // cron sweep fails the email when the claim is old (case c).
+    await logSystemEvent(env, {
+      level: "error",
+      source: "send",
+      message:
+        "The email was sent, but the Cloudflare message id was not stored.",
+      detail: { emailId: email.id, cfMessageId: messageId },
+    });
+
+    return msg.ack();
+  }
+
   await recordSent(env, email, messageId, now);
   msg.ack();
 }
+
+// Waits before each new try of the write that follows `send`, in
+// milliseconds.
+const STORE_RETRY_DELAYS = [50, 200, 800];
+
+// Stores the Cloudflare message id and ends the claim. Tries again a few
+// times, because a failure here can cause a second send. Returns false
+// when each try failed.
+async function storeMessageId(
+  env: Env,
+  id: string,
+  messageId: string,
+  at: number,
+): Promise<boolean> {
+  for (let i = 0; i <= STORE_RETRY_DELAYS.length; i++) {
+    try {
+      await env.DB.prepare(
+        "UPDATE emails SET cf_message_id = ?, sent_at = ?, claimed_at = NULL WHERE id = ?",
+      )
+        .bind(messageId, at, id)
+        .run();
+
+      return true;
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          evt: "send.store_failed",
+          emailId: id,
+          try: i + 1,
+          error: errorText(err),
+        }),
+      );
+
+      const delay = STORE_RETRY_DELAYS[i];
+
+      if (delay !== undefined) await sleep(delay);
+    }
+  }
+
+  return false;
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
