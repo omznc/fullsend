@@ -113,8 +113,8 @@ export function Shell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
       {narrow ? (
-        <div className="material sticky top-0 z-30 font-mono text-[13px]">
-          <div className="flex h-[52px] items-center justify-between border-b border-line pr-1 pl-4">
+        <>
+          <div className="material sticky top-0 z-30 flex h-[52px] items-center justify-between border-b border-line pr-1 pl-4 font-mono text-[13px]">
             <Link href="/" className="no-underline">
               <Logo />
             </Link>
@@ -136,11 +136,13 @@ export function Shell({ children }: { children: ReactNode }) {
               />
             </div>
           </div>
+          {/* Outside the bar: its backdrop-filter would make it the
+              containing block of this fixed nav. */}
           {menuShown && (
             <nav
               aria-label="Main"
               data-state={menu ? "open" : "closed"}
-              className="fs-pop fixed inset-x-0 top-[52px] bottom-0 z-30 flex origin-top flex-col overflow-y-auto bg-bg"
+              className="fs-pop fixed inset-x-0 top-[52px] bottom-0 z-30 flex origin-top flex-col overflow-y-auto bg-bg font-mono text-[13px]"
             >
               {NAV.map((n) => (
                 <Link
@@ -172,7 +174,7 @@ export function Shell({ children }: { children: ReactNode }) {
               </div>
             </nav>
           )}
-        </div>
+        </>
       ) : (
         <div className="font-mono text-[12.5px]">
           <div className="flex h-11 items-stretch border-b border-line">
