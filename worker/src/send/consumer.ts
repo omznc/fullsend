@@ -168,6 +168,7 @@ export interface EmailDbRow {
   cf_message_id: string | null;
   body_key: string | null;
   size: number;
+  sweep_count: number;
   created_at: number;
   sent_at: number | null;
 }
@@ -222,6 +223,7 @@ export function rowToEmail(r: EmailDbRow): EmailRow {
     cfMessageId: r.cf_message_id ?? null,
     bodyKey: r.body_key ?? null,
     size: r.size,
+    sweepCount: r.sweep_count,
     createdAt: r.created_at,
     sentAt: r.sent_at ?? null,
   };

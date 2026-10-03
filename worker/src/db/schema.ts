@@ -130,6 +130,8 @@ export const emails = sqliteTable(
     cfMessageId: text("cf_message_id"),
     bodyKey: text("body_key"),
     size: integer("size").notNull().default(0),
+    // How often the cron sweep put the stuck email on the send queue again.
+    sweepCount: integer("sweep_count").notNull().default(0),
     createdAt: integer("created_at").notNull(),
     sentAt: integer("sent_at"),
   },
@@ -137,6 +139,7 @@ export const emails = sqliteTable(
     index("emails_created").on(t.createdAt, t.id),
     index("emails_status").on(t.status, t.createdAt),
     index("emails_scheduled").on(t.status, t.scheduledAt),
+    index("emails_status_event").on(t.status, t.lastEventAt),
     uniqueIndex("emails_cf_message_id").on(t.cfMessageId),
     index("emails_api_key").on(t.apiKeyId, t.createdAt),
     index("emails_domain").on(t.domainId, t.createdAt),
@@ -178,7 +181,10 @@ export const idempotencyKeys = sqliteTable(
     response: text("response", { mode: "json" }).$type<unknown>(),
     createdAt: integer("created_at").notNull(),
   },
-  (t) => [primaryKey({ columns: [t.apiKeyId, t.key] })],
+  (t) => [
+    primaryKey({ columns: [t.apiKeyId, t.key] }),
+    index("idempotency_keys_created").on(t.createdAt),
+  ],
 );
 
 export const suppressions = sqliteTable("suppressions", {
@@ -220,6 +226,7 @@ export const webhookDeliveries = sqliteTable(
   (t) => [
     index("webhook_deliveries_webhook").on(t.webhookId, t.createdAt),
     index("webhook_deliveries_message").on(t.messageId),
+    index("webhook_deliveries_created").on(t.createdAt),
   ],
 );
 
@@ -231,6 +238,42 @@ export const authAttempts = sqliteTable("auth_attempts", {
   lockedUntil: integer("locked_until").notNull(),
   updatedAt: integer("updated_at").notNull(),
 });
+
+// A failure that is not tied to one email, and a dead queue message. The
+// payload of a dead queue message goes in detail (JSON).
+export const systemEvents = sqliteTable(
+  "system_events",
+  {
+    id: text("id").primaryKey(),
+    createdAt: integer("created_at").notNull(),
+    level: text("level", { enum: ["error", "warn"] }).notNull(),
+    // For example "cron", "events", "hooks", "send" or "sweep".
+    source: text("source").notNull(),
+    message: text("message").notNull(),
+    detail: text("detail", { mode: "json" }).$type<JsonObject>(),
+  },
+  (t) => [index("system_events_created").on(t.createdAt)],
+);
+
+// A log of the requests to the public API.
+export const apiRequests = sqliteTable(
+  "api_requests",
+  {
+    id: text("id").primaryKey(),
+    createdAt: integer("created_at").notNull(),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    status: integer("status").notNull(),
+    apiKeyId: text("api_key_id"),
+    errorName: text("error_name"),
+    errorMessage: text("error_message"),
+    durationMs: integer("duration_ms").notNull(),
+  },
+  (t) => [
+    index("api_requests_created").on(t.createdAt),
+    index("api_requests_status").on(t.status, t.createdAt),
+  ],
+);
 
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
