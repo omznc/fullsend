@@ -19,6 +19,7 @@ import {
   listEmails,
   reschedule,
 } from "../send/manage";
+import { emailMetrics } from "../send/metrics";
 import { apiKeyAuth, type ApiVars } from "./auth";
 
 export const emailsApi = new Hono<ApiVars>();
@@ -72,6 +73,10 @@ emailsApi.get("/", apiKeyAuth(), async (c) => {
 
   return c.json({ object: "list", has_more, data: emails.map(emailListJson) });
 });
+
+emailsApi.get("/metrics", apiKeyAuth(), async (c) =>
+  c.json(await emailMetrics(c.env, c.req.query())),
+);
 
 emailsApi.get("/:id/attachments", apiKeyAuth(), async (c) => {
   const { data, has_more } = await listAttachments(

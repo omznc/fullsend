@@ -560,7 +560,8 @@ describe("pagination", () => {
     for (let i = 0; i < 3; i++) {
       await resend.webhooks.create({
         endpoint: `https://hooks.example.com/page-${i}`,
-        events: ["email.sent"],
+        // No test sends this event, so no delivery runs.
+        events: ["contact.created"],
       });
     }
 
@@ -651,6 +652,9 @@ describe("webhook event types", () => {
       "contact.created",
       "domain.updated",
     ]);
+
+    // Later tests send emails. Remove the webhook, so none goes out.
+    await resend.webhooks.remove(id);
   });
 });
 
@@ -835,7 +839,7 @@ describe("suppressions", () => {
     const { token } = await newKey();
     const client = new Resend(token, { baseUrl: BASE });
 
-    await client.webhooks.create({
+    const hook = await client.webhooks.create({
       endpoint: "https://hooks.example.com/sup",
       events: ["suppression.added", "suppression.removed"],
     });
@@ -890,6 +894,8 @@ describe("suppressions", () => {
       expect(types()).toHaveLength(4);
     } finally {
       queue.mockRestore();
+      // Later tests must not send to this endpoint.
+      await client.webhooks.remove(hook.data!.id);
     }
   });
 });
@@ -1071,12 +1077,17 @@ describe("webhook events", () => {
   let prior: typeof fetch;
 
   // Stores one attempt of a message, with the stub response.
-  const attempt = (messageId: string, n: number, type = "email.sent") =>
-    deliver(
+  // The pause gives each attempt its own millisecond, so the order is
+  // clear.
+  const attempt = async (messageId: string, n: number, type = "email.sent") => {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    return deliver(
       env,
       { webhookId, messageId, eventId: null, body: testBody(type) },
       n,
     );
+  };
 
   beforeAll(async () => {
     const { token } = await newKey();
@@ -1084,7 +1095,8 @@ describe("webhook events", () => {
 
     const created = await client.webhooks.create({
       endpoint: "https://hooks.example.com/events",
-      events: ["email.sent", "domain.updated"],
+      // No test sends this event, so only the stored attempts count.
+      events: ["contact.created"],
     });
 
     webhookId = created.data!.id;
@@ -1207,12 +1219,14 @@ describe("webhook events", () => {
       webhookId,
       eventId: "msg_retry",
     });
+
     expect(done.data?.next_attempt_at).toBeNull();
 
     const unknown = await client.webhooks.events.get({
       webhookId,
       eventId: "msg_none",
     });
+
     expect(unknown.error).toMatchObject({ statusCode: 404, name: "not_found" });
 
     const hook = await client.webhooks.events.get({
@@ -1266,11 +1280,9 @@ describe("webhook events", () => {
   });
 
   it("replays an event with the same id and body", async () => {
-    const send = vi
-      .spyOn(env.HOOKS_QUEUE, "send")
-      .mockResolvedValue({
-        metadata: { metrics: { backlogCount: 0, backlogBytes: 0 } },
-      });
+    const send = vi.spyOn(env.HOOKS_QUEUE, "send").mockResolvedValue({
+      metadata: { metrics: { backlogCount: 0, backlogBytes: 0 } },
+    });
 
     try {
       const replay = await client.webhooks.events.replay({
@@ -1295,16 +1307,19 @@ describe("webhook events", () => {
         webhookId,
         eventId: "msg_none",
       });
+
       expect(unknown.error).toMatchObject({
         statusCode: 404,
         name: "not_found",
       });
 
       await client.webhooks.update(webhookId, { status: "disabled" });
+
       const off = await client.webhooks.events.replay({
         webhookId,
         eventId: "msg_retry",
       });
+
       expect(off.error).toMatchObject({
         statusCode: 422,
         name: "validation_error",
@@ -1320,6 +1335,286 @@ describe("webhook events", () => {
     const { token } = await newKey({ permission: "sending_access" });
     const sender = new Resend(token, { baseUrl: BASE });
     const res = await sender.webhooks.events.list({ webhookId });
+
+    expect(res.error).toMatchObject({
+      statusCode: 401,
+      name: "restricted_api_key",
+    });
+  });
+});
+
+describe("email metrics", () => {
+  let client: Resend;
+  let domainA: string;
+  let domainB: string;
+
+  const at = (iso: string) => Date.parse(iso);
+
+  async function email(id: string, domainId: string) {
+    await env.DB.prepare(
+      `INSERT INTO emails (id, api_key_id, domain_id, "from", "to", subject, status, last_event, last_event_at, created_at)
+       VALUES (?, 'test', ?, 'a@x.example', '["b@y.example"]', 's', 'sent', 'sent', 0, 0)`,
+    )
+      .bind(id, domainId)
+      .run();
+  }
+
+  async function event(
+    emailId: string,
+    type: string,
+    time: string,
+    extra: { data?: string; bot?: string } = {},
+  ) {
+    await env.DB.prepare(
+      `INSERT INTO email_events (id, email_id, type, data, bot, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        emailId,
+        type,
+        extra.data ?? null,
+        extra.bot ?? null,
+        at(time),
+      )
+      .run();
+  }
+
+  beforeAll(async () => {
+    const { token } = await newKey();
+    client = new Resend(token, { baseUrl: BASE });
+    domainA = await addDomain("metrics-a.example.com");
+    domainB = await addDomain("metrics-b.example.com");
+    await email("m-e1", domainA);
+    await email("m-e2", domainA);
+    await email("m-e3", domainB);
+
+    await event("m-e1", "sent", "2025-03-03T10:00:00Z");
+    await event("m-e1", "delivered", "2025-03-03T10:01:00Z");
+    await event("m-e1", "opened", "2025-03-03T10:05:00Z");
+    await event("m-e1", "opened", "2025-03-03T10:06:00Z");
+    await event("m-e1", "clicked", "2025-03-03T10:07:00Z");
+    await event("m-e2", "sent", "2025-03-03T11:00:00Z");
+
+    await event("m-e2", "bounced", "2025-03-03T11:01:00Z", {
+      data: JSON.stringify({ bounce: { type: "hard" } }),
+    });
+
+    // A bot open does not count.
+    await event("m-e2", "opened", "2025-03-03T11:02:00Z", { bot: "scanner" });
+    await event("m-e3", "sent", "2025-03-04T09:00:00Z");
+    await event("m-e3", "delivered", "2025-03-04T09:01:00Z");
+    await event("m-e3", "complained", "2025-03-04T09:02:00Z");
+    // After the range.
+    await event("m-e3", "sent", "2025-03-05T00:00:00Z");
+  });
+
+  const range = { startDate: "2025-03-03", endDate: "2025-03-04" } as const;
+
+  it("gives the totals of a range, with the last day counted", async () => {
+    const res = await client.emails.metrics(range);
+
+    expect(res.error).toBeNull();
+    expect(res.data).toMatchObject({
+      object: "metrics",
+      start_date: "2025-03-03T00:00:00.000Z",
+      end_date: "2025-03-05T00:00:00.000Z",
+      dimensions: [],
+      granularity: "daily",
+      totals: {
+        sent: 3,
+        delivered: 2,
+        bounced: 1,
+        bounced_permanent: 1,
+        bounced_transient: 0,
+        bounced_undetermined: 0,
+        opened: 2,
+        unique_opened: 1,
+        clicked: 1,
+        unique_clicked: 1,
+        complained: 1,
+        delivery_rate: 0.6667,
+        bounce_rate: 0.3333,
+        open_rate: 0.5,
+        complaint_rate: 0.5,
+      },
+    });
+
+    expect(res.data).not.toHaveProperty("data");
+    expect(res.data?.totals).not.toHaveProperty("received");
+    expect(res.data?.totals).not.toHaveProperty("unsubscribed");
+  });
+
+  it("breaks the answer down by period", async () => {
+    const res = await client.emails.metrics({
+      ...range,
+      dimensions: ["period"],
+      metrics: ["sent", "delivered"],
+    });
+
+    expect(res.data?.metrics).toEqual(["sent", "delivered"]);
+
+    expect(res.data?.data).toEqual([
+      { period: "2025-03-03T00:00:00.000Z", sent: 2, delivered: 1 },
+      { period: "2025-03-04T00:00:00.000Z", sent: 1, delivered: 1 },
+    ]);
+
+    const weekly = await client.emails.metrics({
+      ...range,
+      dimensions: ["period"],
+      granularity: "weekly",
+      metrics: ["sent"],
+    });
+
+    // 2025-03-03 is a Monday.
+    expect(weekly.data?.data).toEqual([
+      { period: "2025-03-03T00:00:00.000Z", sent: 3 },
+    ]);
+
+    const hourly = await client.emails.metrics({
+      ...range,
+      dimensions: ["period"],
+      granularity: "hourly",
+      metrics: ["sent"],
+    });
+
+    expect(hourly.data?.data?.map((r) => r.period)).toEqual([
+      "2025-03-03T10:00:00.000Z",
+      "2025-03-03T11:00:00.000Z",
+      "2025-03-04T09:00:00.000Z",
+    ]);
+  });
+
+  it("breaks the answer down by domain and filters it", async () => {
+    const res = await client.emails.metrics({
+      ...range,
+      dimensions: ["domain"],
+      metrics: ["sent"],
+    });
+
+    expect(res.data?.data).toEqual([
+      {
+        domain_id: domainA,
+        domain_name: "metrics-a.example.com",
+        sent: 2,
+      },
+      {
+        domain_id: domainB,
+        domain_name: "metrics-b.example.com",
+        sent: 1,
+      },
+    ]);
+
+    const only = await client.emails.metrics({
+      ...range,
+      domainId: [domainB],
+      metrics: ["sent", "complained"],
+    });
+
+    expect(only.data?.totals).toEqual({ sent: 1, complained: 1 });
+
+    const byEmail = await client.emails.metrics({
+      ...range,
+      emailId: ["m-e1"],
+      dimensions: ["email"],
+      metrics: ["opened", "unique_opened"],
+    });
+
+    expect(byEmail.data?.data).toEqual([
+      { email_id: "m-e1", opened: 2, unique_opened: 1 },
+    ]);
+  });
+
+  it("uses the last 7 days by default and counts nothing for no events", async () => {
+    const res = await client.emails.metrics({
+      // The events of the other tests are in the last 7 days. This domain
+      // has none.
+      domainId: [domainA],
+      metrics: ["sent"],
+    });
+
+    const days =
+      (Date.parse(res.data!.end_date) - Date.parse(res.data!.start_date)) /
+      86_400_000;
+
+    expect(days).toBe(6);
+    expect(res.data?.totals).toEqual({ sent: 0 });
+  });
+
+  it("refuses what fullsend cannot give", async () => {
+    const zone = await client.emails.metrics({
+      ...range,
+      timezone: "Europe/Berlin",
+    });
+
+    expect(zone.error).toMatchObject({
+      statusCode: 422,
+      name: "validation_error",
+    });
+    expect(
+      (await client.emails.metrics({ ...range, timezone: "UTC" })).error,
+    ).toBeNull();
+
+    const broadcast = await client.emails.metrics({
+      ...range,
+      dimensions: ["broadcast"],
+    });
+
+    expect(broadcast.error).toMatchObject({
+      statusCode: 422,
+      name: "validation_error",
+    });
+
+    const filter = await client.emails.metrics({
+      ...range,
+      broadcastId: ["b1"],
+    });
+
+    expect(filter.error).toMatchObject({
+      statusCode: 422,
+      name: "validation_error",
+    });
+
+    const metric = await client.emails.metrics({
+      ...range,
+      // SAFETY: the test sends a value that the SDK type does not allow.
+      metrics: ["nope" as "sent"],
+    });
+
+    expect(metric.error).toMatchObject({
+      statusCode: 422,
+      name: "invalid_parameter",
+    });
+
+    const order = await client.emails.metrics({
+      startDate: "2025-03-04",
+      endDate: "2025-03-01",
+    });
+
+    expect(order.error).toMatchObject({
+      statusCode: 422,
+      name: "invalid_parameter",
+    });
+
+    const date = await client.emails.metrics({ startDate: "soon" });
+    expect(date.error).toMatchObject({
+      statusCode: 422,
+      name: "invalid_parameter",
+    });
+
+    // A metric of the SDK that fullsend does not have gives no value.
+    const missing = await client.emails.metrics({
+      ...range,
+      metrics: ["received", "sent"],
+    });
+
+    expect(missing.data?.totals).toEqual({ sent: 3 });
+  });
+
+  it("does not take /emails/metrics for an email id", async () => {
+    const { token } = await newKey({ permission: "sending_access" });
+    const sender = new Resend(token, { baseUrl: BASE });
+    const res = await sender.emails.metrics();
 
     expect(res.error).toMatchObject({
       statusCode: 401,
