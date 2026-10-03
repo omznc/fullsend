@@ -12,13 +12,13 @@ import {
   sweepStuck,
 } from "../src/cron";
 import type { Env, HookMessage, SendMessage } from "../src/env";
-import { handleEvent } from "../src/events/consumer";
+import { handleEvent, handleEventsBatch } from "../src/events/consumer";
 import { logSystemEvent } from "../src/lib/system-events";
 import { handleSendBatch } from "../src/send/consumer";
 import { createEmail } from "../src/send/create";
 import { cancelEmail } from "../src/send/manage";
 import { signLink } from "../src/tracking/sign";
-import { deliver } from "../src/webhooks/deliver";
+import { deliver, handleHooksBatch } from "../src/webhooks/deliver";
 import { createWebhook } from "../src/webhooks/service";
 import { addDomain, call } from "./helpers";
 
@@ -861,5 +861,411 @@ describe("failure handling", () => {
     } finally {
       prepare.mockRestore();
     }
+  });
+});
+
+// Makes the D1 binding fail for each statement that contains `text`.
+function failStatements(text: string, times = Infinity) {
+  const real = env.DB.prepare.bind(env.DB);
+  let left = times;
+
+  return vi.spyOn(env.DB, "prepare").mockImplementation((sql) => {
+    if (sql.includes(text) && left-- > 0) throw new Error("D1 is down");
+
+    return real(sql);
+  });
+}
+
+const countEvents = async (source: string, level: string) =>
+  (
+    await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM system_events WHERE source = ? AND level = ?",
+    )
+      .bind(source, level)
+      .first<{ n: number }>()
+  )?.n ?? 0;
+
+async function plainEmail(subject: string) {
+  const { id } = await createEmail(
+    env,
+    { from: "a@send.example.com", to: "x@example.net", subject, text: "t" },
+    { apiKeyId: "test" },
+  );
+
+  return id;
+}
+
+describe("post-send write", () => {
+  it("keeps the claim and does not retry when the write fails", async () => {
+    const id = await plainEmail("store-fails");
+    const before = await countEvents("send", "error");
+    const spy = failStatements("SET cf_message_id");
+    let sends = 0;
+
+    const result = await runSend(
+      fakeEnv(async () => (sends++, { messageId: "cf-lost" })),
+      id,
+    );
+
+    spy.mockRestore();
+    expect(sends).toBe(1);
+    expect(result.explicitAcks).toContain("m1");
+    expect(result.retryMessages).toHaveLength(0);
+
+    const row = await env.DB.prepare(
+      "SELECT status, cf_message_id, claimed_at FROM emails WHERE id = ?",
+    )
+      .bind(id)
+      .first<{
+        status: string;
+        cf_message_id: string | null;
+        claimed_at: number | null;
+      }>();
+
+    expect(row?.status).toBe("queued");
+    expect(row?.cf_message_id).toBeNull();
+    expect(row?.claimed_at).not.toBeNull();
+    expect(await countEvents("send", "error")).toBe(before + 1);
+
+    const ev = await env.DB.prepare(
+      "SELECT detail FROM system_events WHERE source = 'send' ORDER BY created_at DESC LIMIT 1",
+    ).first<{ detail: string }>();
+
+    expect(JSON.parse(ev!.detail)).toMatchObject({
+      emailId: id,
+      cfMessageId: "cf-lost",
+    });
+
+    // A second copy of the message cannot take the email.
+    const again = await runSend(
+      fakeEnv(async () => (sends++, { messageId: "cf-twice" })),
+      id,
+    );
+
+    expect(sends).toBe(1);
+    expect(again.retryMessages).toHaveLength(1);
+  });
+
+  it("stores the id when a later try works", async () => {
+    const id = await plainEmail("store-retries");
+    const spy = failStatements("SET cf_message_id", 1);
+
+    const result = await runSend(
+      fakeEnv(async () => ({ messageId: "cf-late" })),
+      id,
+    );
+
+    spy.mockRestore();
+    expect(result.explicitAcks).toContain("m1");
+    expect(await status(id)).toMatchObject({
+      status: "sent",
+      cf_message_id: "cf-late",
+    });
+  });
+});
+
+describe("dead letters", () => {
+  const eventBody = {
+    type: "cf.email.sending.message.delivered",
+    payload: { messageId: "cf-dead", recipient: "secret@example.net" },
+  };
+
+  async function runEvents(bodies: { body: unknown; attempts: number }[]) {
+    const batch = createMessageBatch(
+      "fullsend-events",
+      bodies.map((b, i) => ({
+        id: `e${i}`,
+        timestamp: new Date(),
+        attempts: b.attempts,
+        body: b.body,
+      })),
+    );
+
+    const ctx = createExecutionContext();
+    await handleEventsBatch(batch, env);
+
+    return getQueueResult(batch, ctx);
+  }
+
+  it("retries an event that fails, then stores its payload", async () => {
+    const spy = failStatements("WHERE cf_message_id = ?");
+    const first = await runEvents([{ body: eventBody, attempts: 9 }]);
+    expect(first.retryMessages).toHaveLength(1);
+
+    const last = await runEvents([{ body: eventBody, attempts: 10 }]);
+    spy.mockRestore();
+    expect(last.explicitAcks).toContain("e0");
+    expect(last.retryMessages).toHaveLength(0);
+
+    const ev = await env.DB.prepare(
+      "SELECT level, detail FROM system_events WHERE source = 'events' AND level = 'error'",
+    ).first<{ level: string; detail: string }>();
+
+    expect(JSON.parse(ev!.detail).payload).toEqual(eventBody);
+  });
+
+  it("logs a dropped event without the recipient", async () => {
+    const result = await runEvents([
+      {
+        body: {
+          ...eventBody,
+          payload: { ...eventBody.payload, messageId: "cf-never" },
+        },
+        attempts: 8,
+      },
+    ]);
+
+    expect(result.explicitAcks).toContain("e0");
+
+    const ev = await env.DB.prepare(
+      "SELECT detail FROM system_events WHERE source = 'events' AND level = 'warn'",
+    ).first<{ detail: string }>();
+
+    expect(JSON.parse(ev!.detail)).toEqual({
+      cfMessageId: "cf-never",
+      type: "cf.email.sending.message.delivered",
+    });
+  });
+
+  it("reads the webhooks one time for a batch", async () => {
+    const ids = [await plainEmail("batch-1"), await plainEmail("batch-2")];
+
+    for (const [i, id] of ids.entries())
+      await runSend(
+        fakeEnv(async () => ({ messageId: `cf-batch-${i}` })),
+        id,
+      );
+
+    const real = env.DB.prepare.bind(env.DB);
+    let reads = 0;
+
+    const spy = vi.spyOn(env.DB, "prepare").mockImplementation((sql) => {
+      if (sql.includes("FROM webhooks WHERE status")) reads++;
+
+      return real(sql);
+    });
+
+    const event = (n: number, kind: string) => ({
+      body: {
+        type: `cf.email.sending.message.${kind}`,
+        payload: { messageId: `cf-batch-${n}`, recipient: "x@example.net" },
+      },
+      attempts: 1,
+    });
+
+    const result = await runEvents([
+      event(0, "delivered"),
+      event(1, "delivered"),
+      event(0, "bounced"),
+    ]);
+
+    spy.mockRestore();
+    expect(result.explicitAcks).toHaveLength(3);
+    expect(reads).toBe(1);
+    expect((await status(ids[0]!))?.status).toBe("bounced");
+    expect((await status(ids[1]!))?.status).toBe("delivered");
+  });
+
+  async function runHooks(body: HookMessage, attempts: number) {
+    const batch = createMessageBatch<HookMessage>("fullsend-hooks", [
+      { id: "h1", timestamp: new Date(), attempts, body },
+    ]);
+
+    const ctx = createExecutionContext();
+    await handleHooksBatch(batch, env);
+
+    return getQueueResult(batch, ctx);
+  }
+
+  it("stores a webhook message that fails after the last retry", async () => {
+    const hook = await createWebhook(env, {
+      endpoint: "https://hooks.example.com/dead",
+      events: ["email.sent"],
+    });
+
+    // The body is not JSON, so deliver throws.
+    const msg: HookMessage = {
+      webhookId: hook.id,
+      messageId: "msg_dead",
+      eventId: null,
+      body: "not json",
+    };
+
+    expect((await runHooks(msg, 7)).retryMessages).toHaveLength(1);
+
+    const last = await runHooks(msg, 8);
+    expect(last.explicitAcks).toContain("h1");
+    expect(last.retryMessages).toHaveLength(0);
+
+    const ev = await env.DB.prepare(
+      "SELECT detail FROM system_events WHERE source = 'hooks' AND level = 'error'",
+    ).first<{ detail: string }>();
+
+    expect(JSON.parse(ev!.detail)).toMatchObject({
+      webhookId: hook.id,
+      payload: { messageId: "msg_dead" },
+    });
+  });
+
+  it("logs a warning when the last delivery fails", async () => {
+    const hook = await createWebhook(env, {
+      endpoint: "https://hooks.example.com/down",
+      events: ["email.sent"],
+    });
+
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("no", { status: 500 }));
+
+    const msg: HookMessage = {
+      webhookId: hook.id,
+      messageId: "msg_down",
+      eventId: null,
+      body: JSON.stringify({ type: "email.sent" }),
+    };
+
+    const early = await runHooks(msg, 7);
+    expect(early.retryMessages).toHaveLength(1);
+    expect(await countEvents("hooks", "warn")).toBe(0);
+
+    const last = await runHooks(msg, 8);
+    fetchSpy.mockRestore();
+    expect(last.explicitAcks).toContain("h1");
+
+    const ev = await env.DB.prepare(
+      "SELECT detail FROM system_events WHERE source = 'hooks' AND level = 'warn'",
+    ).first<{ detail: string }>();
+
+    expect(JSON.parse(ev!.detail)).toMatchObject({
+      webhookId: hook.id,
+      eventType: "email.sent",
+    });
+  });
+});
+
+describe("retention", () => {
+  const setDays = (body: number, row: number) =>
+    env.DB.prepare(
+      "INSERT INTO settings (key, value) VALUES ('body_retention_days', ?1), ('row_retention_days', ?2) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+    )
+      .bind(String(body), String(row))
+      .run();
+
+  async function bodyKey(id: string) {
+    const row = await env.DB.prepare("SELECT body_key FROM emails WHERE id = ?")
+      .bind(id)
+      .first<{ body_key: string }>();
+
+    return row!.body_key;
+  }
+
+  it("deletes the body with an old row when rows expire first", async () => {
+    const id = await plainEmail("retention-r2");
+    const key = await bodyKey(id);
+    expect(await env.BODIES.get(key)).not.toBeNull();
+    await env.DB.prepare("UPDATE emails SET status = 'sent' WHERE id = ?")
+      .bind(id)
+      .run();
+
+    // The rows expire after 1 day, the bodies after 30 days.
+    await setDays(30, 1);
+    await retention(env, Date.now() + 3 * 86_400_000);
+
+    expect(await env.BODIES.get(key)).toBeNull();
+
+    const row = await env.DB.prepare("SELECT id FROM emails WHERE id = ?")
+      .bind(id)
+      .first();
+
+    expect(row).toBeNull();
+  });
+
+  it("deletes an old body and keeps the row", async () => {
+    const id = await plainEmail("retention-body");
+    const key = await bodyKey(id);
+    await env.DB.prepare("UPDATE emails SET status = 'sent' WHERE id = ?")
+      .bind(id)
+      .run();
+
+    await setDays(1, 30);
+    await retention(env, Date.now() + 3 * 86_400_000);
+
+    expect(await env.BODIES.get(key)).toBeNull();
+    expect(
+      await env.DB.prepare("SELECT body_key FROM emails WHERE id = ?")
+        .bind(id)
+        .first(),
+    ).toEqual({ body_key: null });
+  });
+
+  it("keeps a pending email and its body", async () => {
+    const id = await plainEmail("retention-pending");
+    const key = await bodyKey(id);
+    await env.DB.prepare("UPDATE emails SET created_at = 1 WHERE id = ?")
+      .bind(id)
+      .run();
+
+    await setDays(1, 1);
+    await retention(env, Date.now() + 90 * 86_400_000);
+
+    expect((await status(id))?.status).toBe("queued");
+    expect(await env.BODIES.get(key)).not.toBeNull();
+  });
+
+  it("cleans a large table in more than one chunk", async () => {
+    const ids = Array.from({ length: 1200 }, (_, i) => `old-${i}`);
+    const now = Date.now();
+
+    await env.DB.prepare(
+      `INSERT INTO api_requests (id, created_at, method, path, status, duration_ms)
+       SELECT value, ?2, 'GET', '/old', 200, 1 FROM json_each(?1)`,
+    )
+      .bind(JSON.stringify(ids), now - 15 * 86_400_000)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO api_requests (id, created_at, method, path, status, duration_ms) VALUES ('recent', ?, 'GET', '/recent', 200, 1)",
+    )
+      .bind(now - 86_400_000)
+      .run();
+
+    const real = env.DB.prepare.bind(env.DB);
+    let deletes = 0;
+
+    const spy = vi.spyOn(env.DB, "prepare").mockImplementation((sql) => {
+      if (sql.includes("DELETE FROM api_requests")) deletes++;
+
+      return real(sql);
+    });
+
+    const result = await retention(env, now);
+    spy.mockRestore();
+
+    expect(result.complete).toBe(true);
+    expect(deletes).toBe(3);
+
+    const left = await env.DB.prepare(
+      "SELECT path FROM api_requests ORDER BY path",
+    ).all<{ path: string }>();
+
+    expect(left.results).toEqual([{ path: "/recent" }]);
+  });
+
+  it("deletes old system events and keeps recent ones", async () => {
+    const now = Date.now();
+
+    await env.DB.prepare(
+      `INSERT INTO system_events (id, created_at, level, source, message) VALUES
+       ('se-old', ?1, 'warn', 'retention-test', 'old'),
+       ('se-new', ?2, 'warn', 'retention-test', 'new')`,
+    )
+      .bind(now - 31 * 86_400_000, now - 86_400_000)
+      .run();
+    await retention(env, now);
+
+    const left = await env.DB.prepare(
+      "SELECT id FROM system_events WHERE source = 'retention-test'",
+    ).all<{ id: string }>();
+
+    expect(left.results).toEqual([{ id: "se-new" }]);
   });
 });
