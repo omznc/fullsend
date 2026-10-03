@@ -24,7 +24,7 @@ import {
 import { useApi, useTitle } from "../lib/hooks";
 import { useQuery } from "../lib/router";
 
-const TEMPLATE = "minmax(0,1fr) 130px 150px 160px 110px 130px 110px 150px";
+const TEMPLATE = "minmax(0,1fr) 130px 150px 160px 110px 130px 110px 190px";
 
 const COLUMNS = [
   "name",
@@ -56,6 +56,7 @@ export function ApiKeys() {
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<Created | null>(null);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
+  const [editing, setEditing] = useState<ApiKey | null>(null);
 
   const list = keys.data?.data;
 
@@ -157,7 +158,16 @@ export function ApiKeys() {
                 <Mobile>created</Mobile>
                 <RelTime at={k.created_at} />
               </span>
-              <span className="flex md:justify-end">
+              <span className="flex gap-1.5 md:justify-end">
+                <Button
+                  size="sm"
+                  icon="edit"
+                  className="max-md:h-11"
+                  aria-label={`Edit ${k.name}`}
+                  onClick={() => setEditing(k)}
+                >
+                  edit
+                </Button>
                 <Button
                   size="sm"
                   icon="close"
@@ -232,6 +242,24 @@ export function ApiKeys() {
         )}
       </Dialog>
 
+      <Dialog
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title={editing ? `Edit ${editing.name}` : ""}
+        width={480}
+      >
+        {editing && (
+          <EditForm
+            row={editing}
+            onCancel={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              void keys.reload();
+            }}
+          />
+        )}
+      </Dialog>
+
       <ConfirmDialog
         open={revoking !== null}
         title={`Revoke ${revoking?.name ?? ""}?`}
@@ -271,6 +299,95 @@ function KeySkeleton({ show }: { show: boolean }) {
         </div>
       ))}
     </div>
+  );
+}
+
+// Changes the name and the rate limit. The token, the permission and the
+// domain stay as they are.
+function EditForm({
+  row,
+  onCancel,
+  onSaved,
+}: {
+  row: ApiKey;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(row.name);
+  const [rate, setRate] = useState(String(row.rate_limit ?? ""));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const rateNumber = Number(rate);
+
+  const rateBad =
+    !Number.isInteger(rateNumber) || rateNumber < 1 || rateNumber > 1000;
+
+  const nameBad = name.trim().length > 50;
+  const changed = name.trim() !== row.name || rateNumber !== row.rate_limit;
+  const ready = name.trim() !== "" && !rateBad && !nameBad && changed;
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+
+    try {
+      await api(`/api-keys/${row.id}`, {
+        method: "PATCH",
+        body: { name: name.trim(), rate_limit: rateNumber },
+      });
+      onSaved();
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="flex flex-col gap-3.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+
+        if (ready) void submit();
+      }}
+    >
+      <Field
+        label="Name"
+        error={nameBad ? "Use 50 characters or fewer." : undefined}
+      >
+        <Input
+          autoFocus
+          value={name}
+          invalid={nameBad}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </Field>
+      <Field
+        label="Rate limit per second"
+        error={rateBad ? "Use a whole number from 1 to 1000." : undefined}
+        hint="The key stays the same. Apps do not need a new key."
+      >
+        <Input
+          inputMode="numeric"
+          value={rate}
+          invalid={rateBad}
+          onChange={(e) => setRate(e.target.value)}
+        />
+      </Field>
+      {error && <Notice tone="red">{error}</Notice>}
+      <DialogFooter>
+        <Button onClick={onCancel}>cancel</Button>
+        <Button
+          type="submit"
+          variant="primary"
+          icon="check"
+          busy={busy}
+          disabled={!ready}
+        >
+          save
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }
 

@@ -24,6 +24,15 @@ export function checkKeyName(value: string): string {
   return name;
 }
 
+// Checks a rate limit: a whole number from 1 to 1000 requests each second.
+export function checkRateValue(value: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > 1000) {
+    throw validation("The `rate_limit` must be from 1 to 1000.");
+  }
+
+  return value;
+}
+
 export async function createKey(
   env: Env,
   input: {
@@ -50,12 +59,9 @@ export async function createKey(
     if (!domain) throw notFound("Domain");
   }
 
-  const rateLimit =
-    input.rate_limit ?? Number(await getSetting(env, "default_rate_limit"));
-
-  if (!Number.isInteger(rateLimit) || rateLimit < 1 || rateLimit > 1000) {
-    throw validation("The `rate_limit` must be from 1 to 1000.");
-  }
+  const rateLimit = checkRateValue(
+    input.rate_limit ?? Number(await getSetting(env, "default_rate_limit")),
+  );
 
   const token = newKeyToken();
 
@@ -112,13 +118,37 @@ export async function renameKey(
   id: string,
   name: string,
 ): Promise<void> {
+  await updateKey(env, id, { name });
+}
+
+// Changes the name or the rate limit of an active key, or both. The
+// token, the permission and the domain stay as they are. Returns the new
+// row.
+export async function updateKey(
+  env: Env,
+  id: string,
+  input: { name?: string; rate_limit?: number },
+): Promise<ApiKeyRow> {
+  const patch: Partial<ApiKeyRow> = {};
+
+  if (input.name !== undefined) patch.name = checkKeyName(input.name);
+
+  if (input.rate_limit !== undefined)
+    patch.rateLimit = checkRateValue(input.rate_limit);
+
+  if (!Object.keys(patch).length) {
+    throw validation("Give a `name` or a `rate_limit`.");
+  }
+
   const res = await getDb(env)
     .update(apiKeys)
-    .set({ name: checkKeyName(name) })
+    .set(patch)
     .where(and(eq(apiKeys.id, id), isNull(apiKeys.revokedAt)))
-    .returning({ id: apiKeys.id });
+    .returning();
 
-  if (!res.length) throw notFound("API key");
+  if (!res[0]) throw notFound("API key");
+
+  return res[0];
 }
 
 export async function revokeKey(env: Env, id: string): Promise<void> {
