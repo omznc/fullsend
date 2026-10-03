@@ -7,6 +7,7 @@ import { hashPassword } from "../lib/crypto";
 import { validation } from "../lib/errors";
 import { asRecord, isHostname, readJson } from "../lib/http";
 import { isString } from "../lib/json";
+import { likeContains } from "../lib/like";
 import {
   DEFAULTS,
   getSettings,
@@ -208,12 +209,12 @@ miscRoutes.get("/search", async (c) => {
 
   if (q.length < 2)
     return c.json({ emails: [], domains: [], api_keys: [], webhooks: [] });
-  const like = `%${q.replace(/[%_]/g, "")}%`;
+  const like = likeContains(q);
 
   const [emails, domains, keys, hooks] = await Promise.all([
     c.env.DB.prepare(
       `SELECT id, "to", subject, status, created_at FROM emails
-       WHERE id = ? OR cf_message_id = ? OR subject LIKE ? OR "to" LIKE ? ORDER BY created_at DESC LIMIT 8`,
+       WHERE id = ? OR cf_message_id = ? OR subject LIKE ? ESCAPE '\\' OR "to" LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 8`,
     )
       .bind(q, q, like, like)
       .all<{
@@ -224,17 +225,17 @@ miscRoutes.get("/search", async (c) => {
         created_at: number;
       }>(),
     c.env.DB.prepare(
-      "SELECT id, name, status FROM domains WHERE name LIKE ? LIMIT 5",
+      "SELECT id, name, status FROM domains WHERE name LIKE ? ESCAPE '\\' LIMIT 5",
     )
       .bind(like)
       .all(),
     c.env.DB.prepare(
-      "SELECT id, name, prefix FROM api_keys WHERE revoked_at IS NULL AND (name LIKE ? OR prefix LIKE ?) LIMIT 5",
+      "SELECT id, name, prefix FROM api_keys WHERE revoked_at IS NULL AND (name LIKE ? ESCAPE '\\' OR prefix LIKE ? ESCAPE '\\') LIMIT 5",
     )
       .bind(like, like)
       .all(),
     c.env.DB.prepare(
-      "SELECT id, endpoint, status FROM webhooks WHERE endpoint LIKE ? OR id = ? LIMIT 5",
+      "SELECT id, endpoint, status FROM webhooks WHERE endpoint LIKE ? ESCAPE '\\' OR id = ? LIMIT 5",
     )
       .bind(like, q)
       .all(),
@@ -264,8 +265,8 @@ interface SuppressionRow {
 
 miscRoutes.get("/suppressions", async (c) => {
   const q = c.req.query("q")?.trim();
-  const where = q ? ["address LIKE ?"] : [];
-  const params = q ? [`%${q.toLowerCase().replace(/[%_]/g, "")}%`] : [];
+  const where = q ? ["address LIKE ? ESCAPE '\\'"] : [];
+  const params = q ? [likeContains(q.toLowerCase())] : [];
   // The cursor is the address: the table has no id column.
   const page = parsePage(c.req.query());
   const limit = page.limit ?? 50;

@@ -2,6 +2,7 @@ import type { Env } from "../env";
 import { type EmailRow, recordEvent } from "../events/record";
 import { ApiError, notFound, validation } from "../lib/errors";
 import type { JsonValue } from "../lib/json";
+import { likeContains } from "../lib/like";
 import { iso, isoOrNull } from "../lib/time";
 import { CLAIM_TTL, type EmailDbRow, rowToEmail } from "./consumer";
 import type { StoredBody } from "./create";
@@ -196,9 +197,9 @@ export async function listEmails(
   }
 
   if (filter.q) {
-    const like = `%${filter.q.replace(/[%_]/g, "")}%`;
+    const like = likeContains(filter.q);
     where.push(
-      `(subject LIKE ? OR "to" LIKE ? OR cc LIKE ? OR bcc LIKE ? OR id = ?)`,
+      `(subject LIKE ? ESCAPE '\\' OR "to" LIKE ? ESCAPE '\\' OR cc LIKE ? ESCAPE '\\' OR bcc LIKE ? ESCAPE '\\' OR id = ?)`,
     );
     params.push(like, like, like, like, filter.q);
   }
