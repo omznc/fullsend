@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { EmailRow } from "../events/record";
+import { csvResponse, EXPORT_CHUNK, MAX_EXPORT_ROWS } from "../lib/csv";
 import { notFound, validation } from "../lib/errors";
 import { asRecord, readJson } from "../lib/http";
 import { parsePage } from "../lib/page";
@@ -9,6 +10,7 @@ import {
   cancelEmail,
   getBody,
   getEmail,
+  type ListFilter,
   listEmails,
   reschedule,
 } from "../send/manage";
@@ -80,25 +82,32 @@ const date = (v: string | undefined) => {
   return t;
 };
 
-emailRoutes.get("/", async (c) => {
-  const q = c.req.query();
-
-  const status =
-    q.tab === "scheduled"
-      ? ["scheduled"]
-      : q.status
-        ? q.status.split(",").filter(Boolean)
-        : undefined;
-
-  const { emails, has_more } = await listEmails(c.env, parsePage(q), {
-    status,
+// The filters of the list and of the export, from the query string.
+function listFilter(q: Record<string, string | undefined>): ListFilter {
+  return {
+    status:
+      q.tab === "scheduled"
+        ? ["scheduled"]
+        : q.status
+          ? q.status.split(",").filter(Boolean)
+          : undefined,
     domainId: q.domain || undefined,
     apiKeyId: q.api_key || undefined,
     tag: q.tag || undefined,
     since: date(q.since),
     until: date(q.until),
     q: q.q?.trim() || undefined,
-  });
+  };
+}
+
+emailRoutes.get("/", async (c) => {
+  const q = c.req.query();
+
+  const { emails, has_more } = await listEmails(
+    c.env,
+    parsePage(q),
+    listFilter(q),
+  );
 
   const names = await keyNames(
     c.env,
@@ -110,6 +119,62 @@ emailRoutes.get("/", async (c) => {
     has_more,
     data: emails.map((e) => dashEmail(e, names)),
   });
+});
+
+// The columns of the CSV export.
+const EXPORT_HEADER = [
+  "id",
+  "created_at",
+  "from",
+  "to",
+  "subject",
+  "status",
+  "last_event",
+  "tags",
+];
+
+// The emails of the list as a CSV file. It takes the same filters as the
+// list, and it has MAX_EXPORT_ROWS rows at most.
+emailRoutes.get("/export", (c) => {
+  const filter = listFilter(c.req.query());
+  let after: string | undefined;
+  let sent = 0;
+  let done = false;
+
+  return csvResponse(
+    `fullsend-emails-${new Date().toISOString().slice(0, 10)}.csv`,
+    EXPORT_HEADER,
+    async () => {
+      if (done) return null;
+
+      const { emails, has_more } = await listEmails(
+        c.env,
+        { limit: Math.min(EXPORT_CHUNK, MAX_EXPORT_ROWS - sent), after },
+        filter,
+      );
+
+      sent += emails.length;
+      after = emails.at(-1)?.id;
+
+      // The last chunk, or the row limit, ends the file on the next call.
+      done = !has_more || sent >= MAX_EXPORT_ROWS;
+
+      return emails.length
+        ? emails.map((e) => [
+            e.id,
+            iso(e.createdAt),
+            e.from,
+            e.to.join("; "),
+            e.subject,
+            e.status,
+            e.lastEvent,
+            (e.tags ?? [])
+              .map((t) => (t.value ? `${t.name}:${t.value}` : t.name))
+              .join("; "),
+          ])
+        : null;
+    },
+  );
 });
 
 // Sends an email with the dashboard session (playground, test email).

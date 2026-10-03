@@ -8,6 +8,7 @@ import {
 } from "../api";
 import {
   Button,
+  ButtonLink,
   Dialog,
   DialogFooter,
   EmptyState,
@@ -116,9 +117,21 @@ export function Suppressions() {
         title="Suppressions"
         subtitle="Addresses fullsend will not email. This protects your reputation with mail providers."
         actions={
-          <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>
-            add addresses
-          </Button>
+          <>
+            <ButtonLink
+              href={`/api/suppressions/export${qs({ q, reason })}`}
+              icon="download"
+            >
+              export CSV
+            </ButtonLink>
+            <Button
+              variant="primary"
+              icon="plus"
+              onClick={() => setAdding(true)}
+            >
+              add addresses
+            </Button>
+          </>
         }
       />
       <div className="px-4 pb-4 md:px-8">

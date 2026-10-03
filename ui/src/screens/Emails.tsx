@@ -124,7 +124,8 @@ export function Emails() {
 
   const active = FILTER_KEYS.filter((k) => filters[k]);
 
-  const path = `/emails${qs({
+  // The filters, as the list and the CSV export take them.
+  const filterQuery = {
     tab: tab === "scheduled" ? "scheduled" : null,
     status: tab === "all" ? filters.status : null,
     domain: tab === "all" ? filters.domain : null,
@@ -132,10 +133,9 @@ export function Emails() {
     tag: tab === "all" ? filters.tag : null,
     since: tab === "all" ? filters.since : null,
     q: filters.q,
-    limit: PAGE,
-    after,
-    before,
-  })}`;
+  };
+
+  const path = `/emails${qs({ ...filterQuery, limit: PAGE, after, before })}`;
 
   const { data, error, loading, reload, setData } = useApi<List<Email>>(path);
 
@@ -231,14 +231,23 @@ export function Emails() {
         title="Emails"
         subtitle="Every email your apps sent. Click one to see what happened to it."
         actions={
-          <ButtonLink
-            href="/playground"
-            variant="primary"
-            icon="mail-arrow-right"
-            className="h-10"
-          >
-            send email
-          </ButtonLink>
+          <>
+            <ButtonLink
+              href={`/api/emails/export${qs(filterQuery)}`}
+              icon="download"
+              className="h-10"
+            >
+              export CSV
+            </ButtonLink>
+            <ButtonLink
+              href="/playground"
+              variant="primary"
+              icon="mail-arrow-right"
+              className="h-10"
+            >
+              send email
+            </ButtonLink>
+          </>
         }
       />
       <Tabs

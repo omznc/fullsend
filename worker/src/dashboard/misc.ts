@@ -4,6 +4,7 @@ import { listDomains } from "../domains/service";
 import { normalize, parseAddress } from "../lib/address";
 import { Cloudflare, CloudflareError, hasToken } from "../lib/cloudflare";
 import { hashPassword } from "../lib/crypto";
+import { csvResponse, EXPORT_CHUNK, MAX_EXPORT_ROWS } from "../lib/csv";
 import { validation } from "../lib/errors";
 import { asRecord, isHostname, readJson } from "../lib/http";
 import { isString } from "../lib/json";
@@ -271,20 +272,14 @@ interface SuppressionRow {
   created_at: number;
 }
 
-miscRoutes.get("/suppressions", async (c) => {
-  const q = c.req.query("q")?.trim();
-  const reason = c.req.query("reason");
+// The reason of a request, or a response when the reason is not known.
+const reasonError = {
+  error: "invalid_parameter",
+  message: "The reason must be hard_bounce, complaint or manual.",
+};
 
-  if (reason && !isReason(reason)) {
-    return c.json(
-      {
-        error: "invalid_parameter",
-        message: "The reason must be hard_bounce, complaint or manual.",
-      },
-      422,
-    );
-  }
-
+// The WHERE parts of the list and the export. The search alone is `search`.
+function suppressionFilter(q: string | undefined, reason: string | undefined) {
   const search = q ? ["address LIKE ? ESCAPE '\\'"] : [];
   const searchParams = q ? [likeContains(q.toLowerCase())] : [];
   const where = [...search];
@@ -294,6 +289,19 @@ miscRoutes.get("/suppressions", async (c) => {
     where.push("reason = ?");
     params.push(reason);
   }
+
+  return { search, searchParams, where, params };
+}
+
+miscRoutes.get("/suppressions", async (c) => {
+  const reason = c.req.query("reason");
+
+  if (reason && !isReason(reason)) return c.json(reasonError, 422);
+
+  const { search, searchParams, where, params } = suppressionFilter(
+    c.req.query("q")?.trim(),
+    reason,
+  );
 
   // The cursor is the address: the table has no id column.
   const page = parsePage(c.req.query());
@@ -348,6 +356,52 @@ miscRoutes.post("/suppressions", async (c) => {
   return c.json({ ok: true });
 });
 
+// The suppressions of the list as a CSV file, with the same search and
+// reason filter. It has MAX_EXPORT_ROWS rows at most.
+miscRoutes.get("/suppressions/export", async (c) => {
+  const reason = c.req.query("reason");
+
+  if (reason && !isReason(reason)) return c.json(reasonError, 422);
+
+  const { where, params } = suppressionFilter(c.req.query("q")?.trim(), reason);
+
+  let after: string | null = null;
+  let sent = 0;
+  let done = false;
+
+  return csvResponse(
+    `fullsend-suppressions-${new Date().toISOString().slice(0, 10)}.csv`,
+    ["address", "reason", "source", "email_id", "created_at"],
+    async () => {
+      if (done) return null;
+
+      const cursor = after === null ? where : [...where, "address > ?"];
+      const limit = Math.min(EXPORT_CHUNK, MAX_EXPORT_ROWS - sent);
+
+      const { results } = await c.env.DB.prepare(
+        `SELECT * FROM suppressions ${cursor.length ? `WHERE ${cursor.join(" AND ")}` : ""}
+         ORDER BY address ASC LIMIT ?`,
+      )
+        .bind(...params, ...(after === null ? [] : [after]), limit)
+        .all<SuppressionRow>();
+
+      sent += results.length;
+      after = results.at(-1)?.address ?? after;
+      done = results.length < limit || sent >= MAX_EXPORT_ROWS;
+
+      return results.length
+        ? results.map((r) => [
+            r.address,
+            r.reason,
+            r.source,
+            r.email_id ?? "",
+            iso(r.created_at),
+          ])
+        : null;
+    },
+  );
+});
+
 // Adds up to 100 addresses with one reason. A new address sends a
 // suppression.added event, as the public batch route does. An address that
 // is on the list stays as it is.
@@ -356,15 +410,7 @@ miscRoutes.post("/suppressions/batch", async (c) => {
   const addresses = checkEmails(body.emails);
   const reason = body.reason ?? "manual";
 
-  if (!isString(reason) || !isReason(reason)) {
-    return c.json(
-      {
-        error: "invalid_parameter",
-        message: "The reason must be hard_bounce, complaint or manual.",
-      },
-      422,
-    );
-  }
+  if (!isString(reason) || !isReason(reason)) return c.json(reasonError, 422);
 
   const added = await addSuppressions(
     c.env,
