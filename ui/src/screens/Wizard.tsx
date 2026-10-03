@@ -9,7 +9,7 @@ import {
   SkeletonBlock,
   useToast,
 } from "../components/ui";
-import { useApi, useNarrow, useTitle } from "../lib/hooks";
+import { useApi, useNarrow, usePoll, useTitle } from "../lib/hooks";
 import { Link, navigate, useLocation } from "../lib/router";
 import {
   StepCloudflare,
@@ -88,9 +88,20 @@ function stepOf(path: string): number {
   return Number.isInteger(n) && n >= 1 && n <= 8 ? n : 1;
 }
 
+// One run of the verify loop.
+interface Job {
+  id: string;
+  began: number;
+  attempt: number;
+  // True while a request of this run is in flight.
+  busy: boolean;
+}
+
 // Verifies the domain in a loop: every 10 s for 5 minutes, then every
 // 60 s, and it gives up after 30 minutes. The server has no background
-// verify, so the loop runs here and ends when the wizard closes.
+// verify, so the loop runs here and ends when the wizard closes. A hidden
+// tab pauses the loop (see usePoll), and one check runs when the tab is
+// visible again.
 function useVerify(
   onDomain: (d: Domain) => void,
   onReady: (d: Domain) => void,
@@ -102,68 +113,90 @@ function useVerify(
     busy: false,
   });
 
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const gen = useRef(0);
+  const [slow, setSlow] = useState(false);
+  const job = useRef<Job | null>(null);
   const cbs = useRef({ onDomain, onReady });
   useEffect(() => {
     cbs.current = { onDomain, onReady };
   });
-  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(
+    () => () => {
+      job.current = null;
+    },
+    [],
+  );
 
-  const start = useCallback((id: string) => {
-    clearTimeout(timer.current);
-    const mine = ++gen.current;
-    const began = Date.now();
-    let attempt = 0;
+  // Runs one check of the current run. A new start replaces the run, and
+  // the answer of the old run is then dropped.
+  const check = useCallback(async (): Promise<void> => {
+    const mine = job.current;
 
-    const tick = async (): Promise<void> => {
-      attempt += 1;
-      setState((s) => ({
-        ...s,
-        phase: "running",
-        attempt,
-        nextAt: null,
-        busy: true,
-      }));
-      let domain: Domain | null = null;
+    if (!mine || mine.busy) return;
 
-      try {
-        domain = await api<Domain>(`/domains/${id}/verify`, { method: "POST" });
-      } catch {
-        // A failed request counts as one attempt. The loop goes on.
-      }
+    mine.busy = true;
+    mine.attempt += 1;
+    const attempt = mine.attempt;
 
-      if (mine !== gen.current) return;
+    setState((s) => ({
+      ...s,
+      phase: "running",
+      attempt,
+      nextAt: null,
+      busy: true,
+    }));
+    let domain: Domain | null = null;
 
-      if (domain) cbs.current.onDomain(domain);
-
-      if (domain?.status === "verified") {
-        cbs.current.onReady(domain);
-        setState({ phase: "done", attempt, nextAt: null, busy: false });
-
-        return;
-      }
-
-      const spent = Date.now() - began;
-
-      if (spent >= GIVE_UP) {
-        setState({ phase: "failed", attempt, nextAt: null, busy: false });
-
-        return;
-      }
-
-      const wait = spent < FAST_SPAN ? FAST : SLOW;
-      setState({
-        phase: "running",
-        attempt,
-        nextAt: Date.now() + wait,
-        busy: false,
+    try {
+      domain = await api<Domain>(`/domains/${mine.id}/verify`, {
+        method: "POST",
       });
-      timer.current = setTimeout(() => void tick(), wait);
-    };
+    } catch {
+      // A failed request counts as one attempt. The loop goes on.
+    }
 
-    void tick();
+    mine.busy = false;
+
+    if (mine !== job.current) return;
+
+    if (domain) cbs.current.onDomain(domain);
+
+    if (domain?.status === "verified") {
+      cbs.current.onReady(domain);
+      job.current = null;
+      setState({ phase: "done", attempt, nextAt: null, busy: false });
+
+      return;
+    }
+
+    const spent = Date.now() - mine.began;
+
+    if (spent >= GIVE_UP) {
+      job.current = null;
+      setState({ phase: "failed", attempt, nextAt: null, busy: false });
+
+      return;
+    }
+
+    const wait = spent < FAST_SPAN ? FAST : SLOW;
+    setSlow(spent >= FAST_SPAN);
+    setState({
+      phase: "running",
+      attempt,
+      nextAt: Date.now() + wait,
+      busy: false,
+    });
   }, []);
+
+  usePoll(check, state.phase === "running" ? (slow ? SLOW : FAST) : null);
+
+  const start = useCallback(
+    (id: string) => {
+      job.current = { id, began: Date.now(), attempt: 0, busy: false };
+      setSlow(false);
+      void check();
+    },
+    [check],
+  );
 
   return { ...state, start };
 }
