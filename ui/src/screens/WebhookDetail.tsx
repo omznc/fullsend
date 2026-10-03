@@ -100,6 +100,11 @@ function resultLabel(d: Delivery): string {
   return /timeout|abort/i.test(d.error ?? "") ? "timeout" : "error";
 }
 
+// The label with its article: "a 500", "a timeout", "an error".
+function withArticle(label: string): string {
+  return `${/^(error|8)/.test(label) ? "an" : "a"} ${label}`;
+}
+
 function ResultBadge({ d }: { d: Delivery }) {
   return (
     <Badge
@@ -730,7 +735,8 @@ function Summary({
     head = `${failed.length} of ${list.length} recent calls failed, `;
     tail = (
       <>
-        the latest was a {resultLabel(last)} <RelTime at={last.created_at} />.{" "}
+        the latest was {withArticle(resultLabel(last))}{" "}
+        <RelTime at={last.created_at} />.{" "}
         {list[0]?.ok ? "The newest call worked. " : "The newest call failed. "}
         {rate}
       </>
