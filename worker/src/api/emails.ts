@@ -1,6 +1,13 @@
 import { Hono } from "hono";
+import { ApiError } from "../lib/errors";
 import { asRecord, parseJson, readJson } from "../lib/http";
 import { parsePage } from "../lib/page";
+import {
+  checkDownload,
+  getAttachment,
+  listAttachments,
+  readAttachment,
+} from "../send/attachments";
 import { createBatch, createEmail } from "../send/create";
 import { withIdempotency } from "../send/idempotency";
 import {
@@ -64,6 +71,60 @@ emailsApi.get("/", apiKeyAuth(), async (c) => {
   const { emails, has_more } = await listEmails(c.env, page);
 
   return c.json({ object: "list", has_more, data: emails.map(emailListJson) });
+});
+
+emailsApi.get("/:id/attachments", apiKeyAuth(), async (c) => {
+  const { data, has_more } = await listAttachments(
+    c.env,
+    new URL(c.req.url).origin,
+    c.req.param("id"),
+    parsePage(c.req.query()),
+  );
+
+  return c.json({ object: "list", has_more, data });
+});
+
+emailsApi.get("/:id/attachments/:attachmentId", apiKeyAuth(), async (c) => {
+  const attachment = await getAttachment(
+    c.env,
+    new URL(c.req.url).origin,
+    c.req.param("id"),
+    c.req.param("attachmentId"),
+  );
+
+  return c.json({ object: "attachment", ...attachment });
+});
+
+// The signed link of an attachment. It has no API key: the signature and
+// the expiry in the query are the proof.
+emailsApi.get("/:id/attachments/:attachmentId/download", async (c) => {
+  const id = c.req.param("id");
+  const index = c.req.param("attachmentId");
+  const { expires, sig } = c.req.query();
+
+  if (
+    !/^\d{1,4}$/.test(index) ||
+    !(await checkDownload(c.env, id, Number(index), expires, sig))
+  ) {
+    throw new ApiError(
+      403,
+      "invalid_access",
+      "The download link is not valid, or it has expired.",
+    );
+  }
+
+  const file = await readAttachment(c.env, id, Number(index));
+  const ascii = file.filename.replace(/[^\x20-\x7e]|["\\]/g, "_");
+
+  return new Response(file.bytes, {
+    headers: {
+      "Content-Type": file.contentType,
+      "Content-Disposition": `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+      "Content-Security-Policy": "sandbox",
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 });
 
 emailsApi.get("/:id", apiKeyAuth(), async (c) => {

@@ -891,3 +891,173 @@ describe("suppressions", () => {
     }
   });
 });
+
+describe("email attachments", () => {
+  let client: Resend;
+  let emailId: string;
+
+  beforeAll(async () => {
+    // A new key has its own rate limit bucket.
+    const { token } = await newKey();
+    client = new Resend(token, { baseUrl: BASE });
+
+    const { data } = await client.emails.send({
+      from: "a@mail.example.com",
+      to: "omar@example.net",
+      subject: "files",
+      text: "see files",
+      attachments: [
+        {
+          filename: "a.txt",
+          content: btoa("hello"),
+          contentType: "text/plain",
+        },
+        { filename: "logo.png", content: btoa("PNG"), contentId: "logo" },
+        { filename: "c.txt", content: btoa("third") },
+      ],
+    });
+
+    emailId = data!.id;
+  });
+
+  it("lists the attachments with signed download links", async () => {
+    const list = await client.emails.attachments.list({ emailId });
+
+    expect(list.error).toBeNull();
+    expect(list.data?.object).toBe("list");
+    expect(list.data?.has_more).toBe(false);
+
+    expect(list.data?.data[0]).toMatchObject({
+      id: "0",
+      filename: "a.txt",
+      size: 5,
+      content_type: "text/plain",
+      content_disposition: "attachment",
+    });
+
+    expect(list.data?.data[0]).not.toHaveProperty("content_id");
+    expect(list.data?.data[1]).toMatchObject({
+      content_disposition: "inline",
+      content_id: "logo",
+    });
+
+    const first = list.data!.data[0]!;
+    expect(first.download_url).toContain(`/emails/${emailId}/attachments/0/`);
+    expect(Date.parse(first.expires_at)).toBeGreaterThan(Date.now());
+  });
+
+  it("pages the attachments", async () => {
+    const first = await client.emails.attachments.list({ emailId, limit: 2 });
+    expect(first.data?.data.map((a) => a.id)).toEqual(["0", "1"]);
+    expect(first.data?.has_more).toBe(true);
+
+    const next = await client.emails.attachments.list({
+      emailId,
+      limit: 2,
+      after: "1",
+    });
+
+    expect(next.data?.data.map((a) => a.id)).toEqual(["2"]);
+    expect(next.data?.has_more).toBe(false);
+
+    const before = await client.emails.attachments.list({
+      emailId,
+      limit: 1,
+      before: "2",
+    });
+
+    expect(before.data?.data.map((a) => a.id)).toEqual(["1"]);
+    expect(before.data?.has_more).toBe(true);
+
+    const bad = await client.emails.attachments.list({ emailId, after: "9" });
+    expect(bad.error).toMatchObject({
+      statusCode: 422,
+      name: "invalid_parameter",
+    });
+  });
+
+  it("gets one attachment and downloads it with no key", async () => {
+    const got = await client.emails.attachments.get({ emailId, id: "2" });
+
+    expect(got.data).toMatchObject({
+      object: "attachment",
+      id: "2",
+      filename: "c.txt",
+      size: 5,
+    });
+
+    const res = await fetch(got.data!.download_url);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("third");
+    expect(res.headers.get("Content-Disposition")).toContain(
+      'filename="c.txt"',
+    );
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
+
+  it("refuses a link with a wrong signature or an old expiry", async () => {
+    const got = await client.emails.attachments.get({ emailId, id: "0" });
+    const url = new URL(got.data!.download_url);
+
+    const tampered = new URL(url);
+    tampered.searchParams.set("sig", "x".repeat(32));
+    expect((await fetch(tampered)).status).toBe(403);
+
+    const old = new URL(url);
+    old.searchParams.set("expires", String(Date.now() - 1000));
+    expect((await fetch(old)).status).toBe(403);
+
+    // The link of one attachment does not open another one.
+    const other = new URL(url);
+    other.pathname = other.pathname.replace("/0/download", "/1/download");
+    const res = await fetch(other);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ name: "invalid_access" });
+
+    const bare = new URL(url);
+    bare.search = "";
+    expect((await fetch(bare)).status).toBe(403);
+  });
+
+  it("returns 404 for an unknown email or attachment", async () => {
+    const email = await client.emails.attachments.list({
+      emailId: "00000000-0000-0000-0000-000000000000",
+    });
+
+    expect(email.error).toMatchObject({ statusCode: 404, name: "not_found" });
+
+    const one = await client.emails.attachments.get({ emailId, id: "7" });
+    expect(one.error).toMatchObject({ statusCode: 404, name: "not_found" });
+    const odd = await client.emails.attachments.get({ emailId, id: "x" });
+    expect(odd.error).toMatchObject({ statusCode: 404, name: "not_found" });
+  });
+
+  it("returns 404 on download when retention deleted the body", async () => {
+    const got = await client.emails.attachments.get({ emailId, id: "0" });
+
+    const row = await env.DB.prepare("SELECT body_key FROM emails WHERE id = ?")
+      .bind(emailId)
+      .first<{ body_key: string }>();
+
+    await env.BODIES.delete(row!.body_key);
+
+    // The list reads D1, so it still works.
+    expect(
+      (await client.emails.attachments.list({ emailId })).data?.data,
+    ).toHaveLength(3);
+
+    const res = await fetch(got.data!.download_url);
+    expect(res.status).toBe(404);
+  });
+
+  it("limits a sending key", async () => {
+    const { token } = await newKey({ permission: "sending_access" });
+    const sender = new Resend(token, { baseUrl: BASE });
+    const res = await sender.emails.attachments.list({ emailId });
+
+    expect(res.error).toMatchObject({
+      statusCode: 401,
+      name: "restricted_api_key",
+    });
+  });
+});
