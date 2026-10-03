@@ -1,9 +1,9 @@
-import type { Env } from "../env";
+import type { Env, HookMessage } from "../env";
 import { ApiError, notFound, validation } from "../lib/errors";
 import { type JsonValue, parseJsonText } from "../lib/json";
 import { type Page, pageQuery } from "../lib/page";
 import { iso } from "../lib/time";
-import { RETRY_DELAYS } from "./deliver";
+import { MAX_ATTEMPTS, RETRY_DELAYS } from "./deliver";
 import { getWebhook } from "./service";
 
 // The webhook events of the Resend API. One event is one message: the
@@ -246,10 +246,71 @@ export async function replayEvent(
     throw validation("The webhook is disabled. Enable it to replay an event.");
   }
 
-  await env.HOOKS_QUEUE.send({
-    webhookId,
-    messageId: eventId,
-    eventId: hit.first.event_id,
-    body: hit.first.request_body,
-  });
+  await env.HOOKS_QUEUE.send(replayMessage(webhookId, eventId, hit.first));
+}
+
+// The queue message that sends an event again.
+const replayMessage = (
+  webhookId: string,
+  messageId: string,
+  first: AttemptRow,
+): HookMessage => ({
+  webhookId,
+  messageId,
+  eventId: first.event_id,
+  body: first.request_body,
+});
+
+// The most events that one call of replayFailed sends again.
+export const MAX_REPLAY = 500;
+
+// The messages in one sendBatch call. The queue allows 100 messages and
+// 256 KB at most, and a stored body can be large.
+const REPLAY_CHUNK = 20;
+
+// Puts the failed events of a webhook on the hooks queue again. An event
+// is failed when its last attempt used the last delay and still failed,
+// and that attempt is not older than `since` (epoch milliseconds). An event
+// that the queue still retries is left alone. The call sends the newest
+// MAX_REPLAY events, and `more` says that others are left.
+export async function replayFailed(
+  env: Env,
+  webhookId: string,
+  since: number,
+): Promise<{ queued: number; more: boolean }> {
+  const hook = await getWebhook(env, webhookId);
+
+  if (hook.status !== "enabled") {
+    throw validation("The webhook is disabled. Enable it to replay events.");
+  }
+
+  const { results } = await env.DB.prepare(
+    `SELECT d.message_id FROM webhook_deliveries d
+     WHERE d.webhook_id = ?1 AND d.created_at >= ?2 AND d.attempt >= ?3
+       AND (d.status_code IS NULL OR d.status_code < 200 OR d.status_code > 299)
+       AND NOT EXISTS (
+         SELECT 1 FROM webhook_deliveries x
+         WHERE x.webhook_id = d.webhook_id AND x.message_id = d.message_id
+           AND (x.created_at > d.created_at
+             OR (x.created_at = d.created_at AND x.id > d.id)))
+     GROUP BY d.message_id ORDER BY MAX(d.created_at) DESC LIMIT ?4`,
+  )
+    .bind(webhookId, since, MAX_ATTEMPTS, MAX_REPLAY + 1)
+    .all<{ message_id: string }>();
+
+  const ids = results.slice(0, MAX_REPLAY).map((r) => r.message_id);
+  const found = await lastAttempts(env, webhookId, ids);
+  const messages: { body: HookMessage }[] = [];
+
+  for (const id of ids) {
+    const hit = found.get(id);
+
+    if (hit) messages.push({ body: replayMessage(webhookId, id, hit.first) });
+  }
+
+  for (let i = 0; i < messages.length; i += REPLAY_CHUNK) {
+    await env.HOOKS_QUEUE.sendBatch(messages.slice(i, i + REPLAY_CHUNK));
+  }
+
+  return { queued: messages.length, more: results.length > MAX_REPLAY };
 }

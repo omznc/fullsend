@@ -19,12 +19,14 @@ import {
   TableRow,
   TextLink,
   Pager,
+  Segmented,
+  Select,
   cx,
   errorText,
   useToast,
 } from "../components/ui";
 import { percent } from "../lib/format";
-import { useApi, useNow, useTitle } from "../lib/hooks";
+import { useApi, useNow, usePoll, useTitle } from "../lib/hooks";
 import { isJsonObject, isString, parseJson } from "../lib/json";
 import { Link, navigate, useQuery } from "../lib/router";
 import {
@@ -48,11 +50,38 @@ const COLUMNS = [
 
 const LIMIT = 20;
 
-// The Worker sends a call up to 8 times. The delay before each retry, in
-// seconds, is from worker/src/webhooks/deliver.ts.
-const MAX_ATTEMPTS = 8;
+// "5 s", "5 min", "2 h".
+function span(seconds: number): string {
+  if (seconds < 60) return `${seconds} s`;
 
-const RETRY_DELAYS = [5, 300, 1800, 7200, 18000, 36000, 36000];
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+
+  return `${Math.round(seconds / 3600)} h`;
+}
+
+// "5 s, 5 min and 2 h".
+function schedule(delays: number[]): string {
+  const parts = delays.map(span);
+
+  if (parts.length < 2) return parts.join("");
+
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+// The windows of "send failed again", in hours.
+const WINDOWS = [
+  { value: "1", label: "last hour", hours: 1 },
+  { value: "24", label: "last 24 hours", hours: 24 },
+  { value: "168", label: "last 7 days", hours: 168 },
+];
+
+const RESULTS = [
+  { value: "all", label: "all" },
+  { value: "true", label: "worked" },
+  { value: "false", label: "failed" },
+] as const;
+
+type Result = (typeof RESULTS)[number]["value"];
 
 interface DeliveryList {
   has_more: boolean;
@@ -88,11 +117,33 @@ export function WebhookDetail({ id }: { id: string }) {
   const after = query.get("after");
   const before = query.get("before");
   const selected = query.get("delivery");
+  const okRaw = query.get("ok");
+  const ok: Result = okRaw === "true" || okRaw === "false" ? okRaw : "all";
+  const type = query.get("event_type");
+  const firstPage = !after && !before;
 
   const hook = useApi<Webhook>(`/webhooks/${id}`);
 
-  const deliveries = useApi<DeliveryList>(
-    `/webhooks/${id}/deliveries${qs({ limit: LIMIT, after, before })}`,
+  const listPath = `/webhooks/${id}/deliveries${qs({
+    limit: LIMIT,
+    after,
+    before,
+    ok: ok === "all" ? null : ok,
+    event_type: type,
+  })}`;
+
+  const deliveries = useApi<DeliveryList>(listPath);
+
+  // The first page polls, so a new call shows without a reload. The poll
+  // stops in a hidden tab.
+  usePoll(
+    async () => {
+      const polled = listPath;
+      const res = await api<DeliveryList>(polled).catch(() => null);
+
+      if (res) deliveries.setData(res);
+    },
+    firstPage && deliveries.data ? 10_000 : null,
   );
 
   useTitle(hook.data?.endpoint ?? "Webhook");
@@ -102,6 +153,8 @@ export function WebhookDetail({ id }: { id: string }) {
   const [deleting, setDeleting] = useState(false);
   const [rotating, setRotating] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [again, setAgain] = useState(false);
+  const [windowHours, setWindowHours] = useState("24");
   const [newSecret, setNewSecret] = useState<string | null>(null);
 
   const w = hook.data;
@@ -292,8 +345,55 @@ export function WebhookDetail({ id }: { id: string }) {
         </div>
       </div>
 
-      <div className="border-b border-line px-4 py-3 font-semibold md:px-8">
-        Deliveries
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 md:px-8">
+        <span className="font-semibold">Deliveries</span>
+        <Segmented
+          label="Result"
+          value={ok}
+          options={[...RESULTS]}
+          onChange={(v) =>
+            setQuery({
+              ok: v === "all" ? null : v,
+              after: null,
+              before: null,
+              delivery: null,
+            })
+          }
+        />
+        <Select
+          aria-label="Event type"
+          value={type ?? ""}
+          options={[
+            { value: "", label: "all events" },
+            ...(w?.events ?? []).map((e) => ({ value: e, label: e })),
+          ]}
+          onChange={(v) =>
+            setQuery({
+              event_type: v || null,
+              after: null,
+              before: null,
+              delivery: null,
+            })
+          }
+          className="h-8 w-[200px]"
+        />
+        <span className="flex-1" />
+        <Select
+          aria-label="Send again the calls that failed in"
+          value={windowHours}
+          options={WINDOWS.map(({ value, label }) => ({ value, label }))}
+          onChange={setWindowHours}
+          className="h-8 w-[150px]"
+        />
+        <Button
+          icon="reload"
+          size="sm"
+          disabled={!w?.enabled}
+          title={w && !w.enabled ? "Turn the endpoint on first" : undefined}
+          onClick={() => setAgain(true)}
+        >
+          send failed again
+        </Button>
       </div>
       {deliveries.error && !list ? (
         <ErrorState
@@ -306,6 +406,10 @@ export function WebhookDetail({ id }: { id: string }) {
           <TableHead template={TEMPLATE} columns={COLUMNS} />
           <DeliverySkeleton show={deliveries.loading} />
         </>
+      ) : list.length === 0 && !after && !before && (ok !== "all" || type) ? (
+        <EmptyState icon="link" title="No call matches">
+          Change the result or the event type.
+        </EmptyState>
       ) : list.length === 0 && !after && !before ? (
         <EmptyState
           icon="link"
@@ -403,7 +507,6 @@ export function WebhookDetail({ id }: { id: string }) {
             webhook={w}
             id={id}
             deliveryId={selected}
-            siblings={list ?? []}
             onResent={() => void deliveries.reload()}
           />
         )}
@@ -428,6 +531,42 @@ export function WebhookDetail({ id }: { id: string }) {
           />
         )}
       </Dialog>
+      <ConfirmDialog
+        open={again}
+        title="Send failed calls again?"
+        body={
+          <>
+            fullsend sends again each event that failed for good in the{" "}
+            {WINDOWS.find((x) => x.value === windowHours)?.label ?? ""}. It
+            sends the newest 500 at most. Your endpoint can get an event twice.
+          </>
+        }
+        action="send again"
+        danger={false}
+        onClose={() => setAgain(false)}
+        onConfirm={async () => {
+          const hours = WINDOWS.find((x) => x.value === windowHours)!.hours;
+
+          const r = await api<{ queued: number; more: boolean }>(
+            `/webhooks/${id}/deliveries/resend-failed`,
+            {
+              method: "POST",
+              body: {
+                since: new Date(Date.now() - hours * 3_600_000).toISOString(),
+              },
+            },
+          );
+
+          toast({
+            tone: "info",
+            message:
+              r.queued === 0
+                ? "No failed call to send again."
+                : `${r.queued} call${r.queued === 1 ? "" : "s"} queued.${r.more ? " More are left. Send again once more." : ""}`,
+          });
+          setTimeout(() => void deliveries.reload(), 3000);
+        }}
+      />
       <ConfirmDialog
         open={deleting}
         title="Delete this endpoint?"
@@ -664,13 +803,11 @@ function DeliveryPanel({
   webhook,
   id,
   deliveryId,
-  siblings,
   onResent,
 }: {
   webhook: Webhook | null;
   id: string;
   deliveryId: string;
-  siblings: Delivery[];
   onResent: () => void;
 }) {
   const toast = useToast();
@@ -724,25 +861,18 @@ function DeliveryPanel({
     // Show the raw body.
   }
 
-  const later = siblings.some(
-    (s) => s.message_id === x.message_id && s.attempt > x.attempt,
-  );
-
-  const delay = RETRY_DELAYS[x.attempt - 1];
-
-  const nextAt =
-    !x.ok && !later && webhook?.enabled && delay !== undefined
-      ? new Date(x.created_at).getTime() + delay * 1000
-      : null;
+  const nextAt = x.next_attempt_at ? Date.parse(x.next_attempt_at) : null;
+  const delays = webhook?.retry_delays ?? [];
 
   let note: ReactNode;
 
   if (x.ok) note = "This call worked.";
-  else if (x.attempt >= MAX_ATTEMPTS)
-    note = `All ${MAX_ATTEMPTS} attempts failed. fullsend gave up.`;
-  else if (later) note = "A later attempt of this call is in the log.";
-  else if (nextAt === null)
+  else if (x.attempt >= x.max_attempts)
+    note = `All ${x.max_attempts} attempts failed. fullsend gave up.`;
+  else if (nextAt === null && webhook && !webhook.enabled)
     note = "This endpoint is turned off, so no retry runs.";
+  else if (nextAt === null)
+    note = "A later attempt of this call is in the log.";
   else
     note = (
       <>
@@ -754,9 +884,11 @@ function DeliveryPanel({
         ) : (
           <>A retry is due. </>
         )}
-        <span className="text-fg2">
-          Failed calls retry after 5 s, 5 min, 30 min, 2 h, 5 h, 10 h and 10 h.
-        </span>
+        {delays.length > 0 && (
+          <span className="text-fg2">
+            Failed calls retry after {schedule(delays)}.
+          </span>
+        )}
       </>
     );
 
@@ -785,7 +917,7 @@ function DeliveryPanel({
         </span>
         <ResultBadge d={x} />
         <span className="font-mono text-[12px] text-fg3">
-          attempt {x.attempt} of {MAX_ATTEMPTS}
+          attempt {x.attempt} of {x.max_attempts}
         </span>
         <RelTime at={x.created_at} className="text-fg2" />
       </div>

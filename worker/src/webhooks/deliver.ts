@@ -8,6 +8,9 @@ import { sign } from "./sign";
 // Delay before each retry, in seconds. The sum is about 27 hours.
 export const RETRY_DELAYS = [5, 300, 1800, 7200, 18000, 36000, 36000];
 
+// The first attempt and each retry. The last attempt has no delay after it.
+export const MAX_ATTEMPTS = RETRY_DELAYS.length + 1;
+
 const TIMEOUT_MS = 15_000;
 
 // The max_retries value of the fullsend-hooks queue in wrangler.jsonc.

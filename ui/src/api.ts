@@ -234,6 +234,10 @@ export interface Webhook {
   signing_secret?: string;
   // Only the detail response. Each event that fullsend can send.
   available_events?: string[];
+  // Only the detail response: the seconds before each retry, and the
+  // number of attempts that these delays allow.
+  retry_delays?: number[];
+  max_attempts?: number;
 }
 
 export interface Delivery {
@@ -244,6 +248,10 @@ export interface Delivery {
   attempt: number;
   status_code: number | null;
   ok: boolean;
+  max_attempts: number;
+  // Null when the delivery worked, when no attempt is left, when a later
+  // attempt exists or when the webhook is off.
+  next_attempt_at: string | null;
   duration_ms: number | null;
   error: string | null;
   created_at: string;
