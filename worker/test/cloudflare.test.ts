@@ -443,11 +443,9 @@ describe("verify and delete", () => {
       events: ["domain.updated"],
     });
 
-    const queue = vi
-      .spyOn(env.HOOKS_QUEUE, "sendBatch")
-      .mockResolvedValue({
-        metadata: { metrics: { backlogCount: 0, backlogBytes: 0 } },
-      });
+    const queue = vi.spyOn(env.HOOKS_QUEUE, "sendBatch").mockResolvedValue({
+      metadata: { metrics: { backlogCount: 0, backlogBytes: 0 } },
+    });
 
     try {
       const row = await createDomain(cfEnv, { name: "evt.example.com" });
