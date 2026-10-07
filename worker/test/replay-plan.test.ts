@@ -9,6 +9,7 @@ describe("replay claim query plan", () => {
     )
       .bind("w", 1, JSON.stringify(["m"]), 0)
       .all<{ detail: string }>();
+
     const detail = results.map((r) => r.detail).join(" | ");
 
     expect(detail).toContain("webhook_deliveries_message");
