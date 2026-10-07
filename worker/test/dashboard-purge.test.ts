@@ -23,6 +23,9 @@ describe("delete all data", () => {
         "INSERT INTO system_events (id, created_at, level, source, message) VALUES ('p2', 1, 'warn', 'test', 'a@example.com failed')",
       ),
       env.DB.prepare(
+        "INSERT INTO webhook_replays (webhook_id, message_id, queued_at) VALUES ('w', 'm', 1)",
+      ),
+      env.DB.prepare(
         "INSERT INTO suppressions (address, reason, source, created_at) VALUES ('jane@example.com', 'manual', 'test', 0)",
       ),
     ]);
@@ -37,5 +40,6 @@ describe("delete all data", () => {
     expect(await count("api_requests")).toBe(0);
     expect(await count("system_events")).toBe(0);
     expect(await count("suppressions")).toBe(0);
+    expect(await count("webhook_replays")).toBe(0);
   });
 });
