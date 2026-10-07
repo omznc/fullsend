@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { ApiError } from "../lib/errors";
 import { requireIdentity, type DashVars } from "./auth";
 import { domainRoutes } from "./domains";
 import { emailRoutes } from "./emails";
@@ -13,6 +15,20 @@ import { webhookRoutes } from "./webhooks";
 // with each request that changes data. A form on another site cannot set
 // this header, so the check blocks cross-site request forgery.
 export const dashboardApi = new Hono<DashVars>();
+
+// A route or a service can throw an ApiError, which has the Resend shape.
+// The dashboard API shows it as { error, message }. Another error goes to
+// the error handler of the app.
+dashboardApi.onError((err, c) => {
+  if (!(err instanceof ApiError)) throw err;
+
+  return c.json(
+    { error: err.errorName, message: err.message },
+    // SAFETY: an ApiError has a status code of an HTTP error response.
+    err.statusCode as ContentfulStatusCode,
+    err.headers,
+  );
+});
 
 dashboardApi.use(async (c, next) => {
   if (

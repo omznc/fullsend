@@ -35,8 +35,10 @@ first.
 - **Two error shapes.** A public route throws `ApiError`
   (`src/lib/errors.ts`), and `app.onError` returns the Resend body
   `{ statusCode, name, message }`. A dashboard route returns
-  `c.json({ error, message }, status)`. Use the Resend error names from
-  `ErrorName` on the public side.
+  `c.json({ error, message }, status)`. A dashboard route can also throw an
+  `ApiError`: `dashboardApi.onError` in `src/dashboard/index.ts` shows it as
+  `{ error, message }`. Use the Resend error names from `ErrorName` on the
+  public side.
 - **A permanent send failure is never a 5xx.** The send consumer
   (`src/send/consumer.ts`) marks a code in `PERMANENT` as `failed` and acks
   it. Other errors retry with backoff up to `MAX_ATTEMPTS` (5). Keep
