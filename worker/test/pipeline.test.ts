@@ -18,7 +18,7 @@ import { handleEvent, handleEventsBatch } from "../src/events/consumer";
 import { parseJsonText } from "../src/lib/json";
 import { setSettings } from "../src/lib/settings";
 import { logSystemEvent } from "../src/lib/system-events";
-import { handleSendBatch } from "../src/send/consumer";
+import { CLAIM_TTL, handleSendBatch } from "../src/send/consumer";
 import { createEmail } from "../src/send/create";
 import { cancelEmail } from "../src/send/manage";
 import { signLink } from "../src/tracking/sign";
@@ -225,6 +225,106 @@ describe("send consumer", () => {
     await runSend(e, id, 2);
     expect(sends).toBe(1);
     expect((await status(id))?.status).toBe("sent");
+  });
+
+  it("does not send again when a consumer stopped in the send", async () => {
+    const id = await plainEmail("stopped-in-send");
+    let sends = 0;
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+
+    const stopped = runSend(
+      fakeEnv(async () => {
+        sends++;
+        await gate;
+
+        return { messageId: "cf-stopped" };
+      }),
+      id,
+    );
+
+    await vi.waitFor(() => expect(sends).toBe(1));
+
+    // The claim expires. The queue delivers the message again.
+    await env.DB.prepare("UPDATE emails SET claimed_at = ? WHERE id = ?")
+      .bind(Date.now() - CLAIM_TTL - 1000, id)
+      .run();
+
+    let again = 0;
+
+    const second = await runSend(
+      fakeEnv(async () => (again++, { messageId: "cf-second" })),
+      id,
+      2,
+    );
+
+    expect(again).toBe(0);
+    expect(second.retryMessages).toHaveLength(1);
+    expect((await status(id))?.status).toBe("queued");
+
+    // The sweep fails the email as a send that can be done already.
+    await env.DB.prepare("UPDATE emails SET claimed_at = ? WHERE id = ?")
+      .bind(Date.now() - STUCK_AFTER - 1000, id)
+      .run();
+    expect((await sweepStuck(env)).uncertain).toBeGreaterThanOrEqual(1);
+    expect((await status(id))?.status).toBe("failed");
+    open();
+    await stopped;
+  });
+
+  it("takes an expired claim when the send did not start", async () => {
+    const id = await plainEmail("expired-no-mark");
+
+    await env.DB.prepare(
+      "UPDATE emails SET claimed_at = ?, claim_token = 'dead' WHERE id = ?",
+    )
+      .bind(Date.now() - CLAIM_TTL - 1000, id)
+      .run();
+
+    let sends = 0;
+
+    await runSend(
+      fakeEnv(async () => (sends++, { messageId: "cf-free" })),
+      id,
+      2,
+    );
+
+    expect(sends).toBe(1);
+    expect((await status(id))?.status).toBe("sent");
+  });
+
+  it("does not end the claim of a different consumer", async () => {
+    const id = await plainEmail("other-claim");
+
+    const bodies = vi
+      .spyOn(env.BODIES, "get")
+      .mockImplementationOnce(async () => {
+        // The claim of this consumer expired and a different consumer took it.
+        await env.DB.prepare(
+          "UPDATE emails SET claim_token = 'other', claimed_at = ? WHERE id = ?",
+        )
+          .bind(Date.now(), id)
+          .run();
+
+        throw new Error("R2 down");
+      });
+
+    const result = await runSend(
+      fakeEnv(async () => ({ messageId: "never" })),
+      id,
+    );
+
+    bodies.mockRestore();
+    expect(result.retryMessages).toHaveLength(1);
+
+    const row = await env.DB.prepare(
+      "SELECT claim_token, claimed_at FROM emails WHERE id = ?",
+    )
+      .bind(id)
+      .first<{ claim_token: string | null; claimed_at: number | null }>();
+
+    expect(row?.claim_token).toBe("other");
+    expect(row?.claimed_at).not.toBeNull();
   });
 
   it("does not send again when the sent event failed", async () => {

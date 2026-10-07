@@ -160,7 +160,7 @@ export async function reschedule(
 
   const res = await env.DB.prepare(
     `UPDATE emails SET scheduled_at = ?, dispatched_at = NULL
-     WHERE id = ? AND status = 'scheduled' AND (claimed_at IS NULL OR claimed_at < ?) AND cf_message_id IS NULL`,
+     WHERE id = ? AND status = 'scheduled' AND (claimed_at IS NULL OR (claimed_at < ? AND send_started_at IS NULL)) AND cf_message_id IS NULL`,
   )
     .bind(at, id, Date.now() - CLAIM_TTL)
     .run();
@@ -178,7 +178,7 @@ export async function cancelEmail(env: Env, id: string): Promise<void> {
 
   const res = await env.DB.prepare(
     `UPDATE emails SET status = 'canceled'
-     WHERE id = ? AND status = 'scheduled' AND (claimed_at IS NULL OR claimed_at < ?) AND cf_message_id IS NULL`,
+     WHERE id = ? AND status = 'scheduled' AND (claimed_at IS NULL OR (claimed_at < ? AND send_started_at IS NULL)) AND cf_message_id IS NULL`,
   )
     .bind(id, Date.now() - CLAIM_TTL)
     .run();

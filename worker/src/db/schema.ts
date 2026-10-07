@@ -128,6 +128,11 @@ export const emails = sqliteTable(
     // Set while a send consumer holds the email. It stops a second copy
     // of the queue message from sending the email again.
     claimedAt: integer("claimed_at"),
+    // The owner of the claim. Only this consumer can end the claim.
+    claimToken: text("claim_token"),
+    // The time of the mark that the consumer writes before EMAIL.send. An
+    // expired claim with a mark can belong to an email that is sent.
+    sendStartedAt: integer("send_started_at"),
     cfMessageId: text("cf_message_id"),
     bodyKey: text("body_key"),
     size: integer("size").notNull().default(0),

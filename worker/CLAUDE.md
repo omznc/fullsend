@@ -50,15 +50,24 @@ first.
   `cf_message_id` it records the sent event. With no claim it puts the
   email on the queue again, 3 times at most, then it fails the email. With
   an old claim it fails the email and never sends it again: the consumer
-  can stop during `EMAIL.send`. One window stays: if the Worker stops after
-  `send` returns and before `cf_message_id` is stored, a later copy of the
-  message can send the email a second time. Keep the code between `send`
-  and the store short. A D1 error on that store is not part of this
-  window. The consumer tries the store again 3 times. If each try fails,
-  it keeps the claim, acks the message and writes an `error` system event
-  with the email id and the Cloudflare message id. Case c of the sweep then
-  fails the email with "can be sent already". The consumer never releases
-  the claim after `send` returned.
+  can stop during `EMAIL.send`.
+- **The send claim has a token and a send mark.** The consumer
+  (`src/send/consumer.ts`) takes the email with `claimed_at` and a new
+  `claim_token`. Before `EMAIL.send` it writes `send_started_at` for its own
+  token. A later copy of the message takes an expired claim only when
+  `send_started_at` is not set. A marked and unfinished email stays for the
+  sweep, which fails it with "can be sent already". `release` and `giveUp`
+  end only the claim with their own token, so a consumer never clears the
+  claim of a different consumer. `release` also clears the mark, because
+  the send failed. One window stays: if the Worker stops after `send`
+  returns and before `cf_message_id` is stored, the sweep fails the email
+  and no copy sends it again. Keep the code between `send` and the store
+  short. A D1 error on that store is not part of this window. The consumer
+  tries the store again 3 times. If each try fails, it keeps the claim,
+  acks the message and writes an `error` system event with the email id and
+  the Cloudflare message id. Case c of the sweep then fails the email with
+  "can be sent already". The consumer never releases the claim after `send`
+  returned.
 - **The queue handler routes by the message body, not by the queue name.**
   The deploy form can rename the queues. A body with `emailId` goes to the
   send consumer. A body with `webhookId` goes to webhook delivery.
