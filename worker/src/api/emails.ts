@@ -75,7 +75,7 @@ emailsApi.get("/", apiKeyAuth(), async (c) => {
 });
 
 emailsApi.get("/metrics", apiKeyAuth(), async (c) =>
-  c.json(await emailMetrics(c.env, c.req.query())),
+  c.json(await emailMetrics(c.env, c.req.queries())),
 );
 
 emailsApi.get("/:id/attachments", apiKeyAuth(), async (c) => {

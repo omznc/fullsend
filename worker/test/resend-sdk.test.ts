@@ -12,7 +12,7 @@ import { createKey } from "../src/keys/service";
 import { parseJsonText } from "../src/lib/json";
 import { deliver } from "../src/webhooks/deliver";
 import { testBody } from "../src/webhooks/payload";
-import { addDomain, BASE, newKey, routeFetchToWorker } from "./helpers";
+import { addDomain, BASE, call, newKey, routeFetchToWorker } from "./helpers";
 
 // Runs the official resend SDK against the Worker, with no patch: only
 // the base URL and the key change.
@@ -1419,7 +1419,7 @@ describe("email metrics", () => {
     expect(res.data).toMatchObject({
       object: "metrics",
       start_date: "2025-03-03T00:00:00.000Z",
-      end_date: "2025-03-05T00:00:00.000Z",
+      end_date: "2025-03-04T23:59:59.999Z",
       dimensions: [],
       granularity: "daily",
       totals: {
@@ -1434,10 +1434,10 @@ describe("email metrics", () => {
         clicked: 1,
         unique_clicked: 1,
         complained: 1,
-        delivery_rate: 0.6667,
-        bounce_rate: 0.3333,
-        open_rate: 0.5,
-        complaint_rate: 0.5,
+        delivery_rate: 66.7,
+        bounce_rate: 33.3,
+        open_rate: 50,
+        complaint_rate: 50,
       },
     });
 
@@ -1456,8 +1456,8 @@ describe("email metrics", () => {
     expect(res.data?.metrics).toEqual(["sent", "delivered"]);
 
     expect(res.data?.data).toEqual([
-      { period: "2025-03-03T00:00:00.000Z", sent: 2, delivered: 1 },
-      { period: "2025-03-04T00:00:00.000Z", sent: 1, delivered: 1 },
+      { period: "2025-03-03", sent: 2, delivered: 1 },
+      { period: "2025-03-04", sent: 1, delivered: 1 },
     ]);
 
     const weekly = await client.emails.metrics({
@@ -1468,9 +1468,7 @@ describe("email metrics", () => {
     });
 
     // 2025-03-03 is a Monday.
-    expect(weekly.data?.data).toEqual([
-      { period: "2025-03-03T00:00:00.000Z", sent: 3 },
-    ]);
+    expect(weekly.data?.data).toEqual([{ period: "2025-03-03", sent: 3 }]);
 
     const hourly = await client.emails.metrics({
       ...range,
@@ -1526,20 +1524,71 @@ describe("email metrics", () => {
     ]);
   });
 
-  it("uses the last 7 days by default and counts nothing for no events", async () => {
+  it("uses today and the 6 days before it by default", async () => {
     const res = await client.emails.metrics({
-      // The events of the other tests are in the last 7 days. This domain
-      // has none.
+      // The events of the other tests are in the past. This domain has
+      // none in the last 7 days.
       domainId: [domainA],
       metrics: ["sent"],
     });
 
-    const days =
-      (Date.parse(res.data!.end_date) - Date.parse(res.data!.start_date)) /
-      86_400_000;
+    const today = Math.floor(Date.now() / 86_400_000) * 86_400_000;
 
-    expect(days).toBe(6);
+    expect(res.data?.start_date).toBe(
+      new Date(today - 6 * 86_400_000).toISOString(),
+    );
+    expect(Date.now() - Date.parse(res.data!.end_date)).toBeLessThan(60_000);
     expect(res.data?.totals).toEqual({ sent: 0 });
+  });
+
+  it("counts an email one time when it has many recipients", async () => {
+    await email("m-multi", domainB);
+    await event("m-multi", "sent", "2025-04-01T10:00:00Z");
+    await event("m-multi", "delivered", "2025-04-01T10:01:00Z");
+    await event("m-multi", "delivered", "2025-04-01T10:01:05Z");
+
+    const res = await client.emails.metrics({
+      startDate: "2025-04-01",
+      endDate: "2025-04-01",
+      emailId: ["m-multi"],
+      metrics: ["sent", "delivered", "delivery_rate"],
+    });
+
+    expect(res.data?.end_date).toBe("2025-04-01T23:59:59.999Z");
+    expect(res.data?.totals).toEqual({
+      sent: 1,
+      delivered: 1,
+      delivery_rate: 100,
+    });
+  });
+
+  it("takes a repeated parameter and a comma list", async () => {
+    const { token } = await newKey();
+
+    const get = async (query: string) =>
+      (
+        await call(`/emails/metrics?${query}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ).json<{ metrics: string[]; totals: Record<string, number> }>();
+
+    const repeated = await get(
+      "start_date=2025-03-03&end_date=2025-03-04&metrics=sent&metrics=delivered",
+    );
+
+    expect(repeated.metrics).toEqual(["sent", "delivered"]);
+
+    const domains = await get(
+      `start_date=2025-03-03&end_date=2025-03-04&metrics=sent&domain_id=${domainA}&domain_id=${domainB}`,
+    );
+
+    expect(domains.totals).toEqual({ sent: 3 });
+
+    const mixed = await get(
+      `start_date=2025-03-03&end_date=2025-03-04&metrics=sent&domain_id=${domainA},${domainB}`,
+    );
+
+    expect(mixed.totals).toEqual({ sent: 3 });
   });
 
   it("refuses what fullsend cannot give", async () => {

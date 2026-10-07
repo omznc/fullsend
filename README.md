@@ -204,7 +204,11 @@ retention period deleted the body of the email.
 
 `/emails/metrics` counts the email events in D1. It supports the `period`,
 `domain` and `email` dimensions, the `domain_id` and `email_id` filters and
-all four granularities, in UTC. Each rate is a fraction from 0 to 1.
+all four granularities, in UTC. Each rate is a percent with one decimal
+(`50.0`), as in Resend. A `period` is a date (`2026-07-01`) for the daily,
+weekly and monthly granularity. For the hourly granularity it is a full
+UTC datetime, because the Resend docs show no hourly example. fullsend does
+not clamp an old `start_date` to a retention window.
 
 **Domains**
 
