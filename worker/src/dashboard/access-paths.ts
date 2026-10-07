@@ -48,8 +48,10 @@ export const rememberPaths = (env: Env): Promise<void> =>
 export class AccessSyncError extends Error {}
 
 // The fields of a Self Hosted application that the PUT call accepts. The
-// sync copies only these fields from the GET. Other fields are read-only
-// (id, uid, aud, created_at, updated_at) and the PUT schema rejects them.
+// PUT body must hold each field that the GET returns, so the sync copies
+// all of them. Other fields are read-only (id, uid, aud, created_at,
+// updated_at) and the PUT schema rejects them. `self_hosted_domains` is
+// not copied: `destinations` replaces it.
 // `domain`, `destinations`, `policies`, `name` and `type` are set apart.
 const APP_FIELDS = [
   "allow_authenticate_via_warp",
@@ -62,18 +64,22 @@ const APP_FIELDS = [
   "custom_deny_url",
   "custom_non_identity_deny_url",
   "custom_pages",
+  "eager_redirect_cookie_setting",
   "enable_binding_cookie",
   "http_only_cookie_attribute",
   "logo_url",
   "mfa_config",
+  "oauth_configuration",
   "options_preflight_bypass",
   "path_cookie_attribute",
   "read_service_tokens_from_header",
   "same_site_cookie_attribute",
+  "scim_config",
   "service_auth_401_redirect",
   "session_duration",
   "skip_interstitial",
   "tags",
+  "use_clientless_isolation_app_launcher_url",
 ] as const;
 
 // The fields of an application-scoped policy that the PUT call accepts.
@@ -100,6 +106,9 @@ const POLICY_FIELDS = [
 const DESTINATION_FIELDS = [
   "type",
   "uri",
+  "overrides",
+  "mcp_server_id",
+  "worker_id",
   "cidr",
   "hostname",
   "l4_protocol",
@@ -191,10 +200,23 @@ function updateBody(
   };
 }
 
+// The destinations that the application has now, and the wanted ones that
+// it lacks. A destination that the owner added stays, so it does not go
+// behind the login. A public destination is the same when the `uri` is
+// the same.
+function mergeDestinations(
+  current: JsonObject[],
+  wanted: JsonObject[],
+): JsonObject[] {
+  const uris = new Set(current.map((d) => d.uri));
+
+  return [...current, ...wanted.filter((d) => !uris.has(d.uri))];
+}
+
 // Sets the destinations of an existing application to the current public
 // paths. The PUT call replaces the whole application. So the sync reads
-// the application, keeps every writable field, and changes only `domain`
-// and `destinations`. Then it reads the application again. If the check
+// the application, keeps every writable field, and adds the missing
+// public paths to `destinations`. Then it reads the application again. If the check
 // fails, it puts the first copy back. The sync writes `access_paths` only
 // after a check that passes.
 export async function syncApiApp(
@@ -215,13 +237,17 @@ export async function syncApiApp(
 
   const wanted = apiDestinations(hostname);
 
-  const original = updateBody(
-    before,
-    before.fields.domain,
-    objects(before.raw.destinations).map((d) => pick(d, DESTINATION_FIELDS)),
+  const current = objects(before.raw.destinations).map((d) =>
+    pick(d, DESTINATION_FIELDS),
   );
 
-  const next = updateBody(before, `${hostname}${PUBLIC_PATHS[0]}`, wanted);
+  const original = updateBody(before, before.fields.domain, current);
+
+  const next = updateBody(
+    before,
+    `${hostname}${PUBLIC_PATHS[0]}`,
+    mergeDestinations(current, wanted),
+  );
 
   let problem: string | null = null;
 

@@ -867,10 +867,62 @@ describe("Access path sync", () => {
     const uris = body.destinations.map((d) => d.uri);
     expect(uris).toContain("email.example.com/suppressions");
     expect(uris).toContain("email.example.com/suppressions/*");
-    expect(uris).toHaveLength(PUBLIC_PATHS.length * 2);
+    // The old paths stay. The new paths join them.
+    expect(uris).toEqual(
+      expect.arrayContaining(oldApp.destinations.map((d) => d.uri)),
+    );
+    expect(new Set(uris).size).toBe(uris.length);
     expect(uris.every((u) => u.startsWith("email.example.com/"))).toBe(true);
 
     expect((await settingsJson()).access.paths_current).toBe(true);
+  });
+
+  it("sends the other fields of the application back", async () => {
+    const puts: JsonObject[] = [];
+
+    const extra = {
+      eager_redirect_cookie_setting: "enabled",
+      oauth_configuration: { enabled: false },
+      scim_config: { enabled: false, idp_uid: "idp1" },
+      use_clientless_isolation_app_launcher_url: true,
+    };
+
+    fake = fakeCloudflare(statefulApp({ ...oldApp, ...extra }, puts));
+
+    expect((await syncPaths()).status).toBe(200);
+    expect(puts[0]).toMatchObject(extra);
+  });
+
+  it("keeps a destination that the owner added", async () => {
+    const puts: JsonObject[] = [];
+
+    const added = [
+      {
+        type: "public",
+        uri: "email.example.com/admin/*",
+        overrides: [{ behavior: "public", path_pattern: "/x" }],
+      },
+      { type: "private", cidr: "10.0.0.0/24" },
+    ];
+
+    fake = fakeCloudflare(
+      statefulApp(
+        { ...oldApp, destinations: [...oldApp.destinations, ...added] },
+        puts,
+      ),
+    );
+
+    expect((await syncPaths()).status).toBe(200);
+
+    const sent = z
+      .object({ destinations: z.array(z.looseObject({})) })
+      .parse(puts[0]).destinations;
+
+    expect(sent).toEqual(expect.arrayContaining(added));
+    expect(sent).toContainEqual({
+      type: "public",
+      uri: "email.example.com/suppressions",
+    });
   });
 
   it("sends a reusable policy as a link", async () => {
