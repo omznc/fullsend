@@ -1,5 +1,5 @@
 import type { Env } from "../env";
-import { emitEvent, type Hook } from "../events/record";
+import { emitEvents, type Hook } from "../events/record";
 import { normalize, parseAddress } from "../lib/address";
 import { fromBase64, toBase64Url } from "../lib/crypto";
 import { ApiError, notFound, validation } from "../lib/errors";
@@ -131,9 +131,7 @@ export async function addSuppressions(
     for (const r of results) added.push(...r.results);
   }
 
-  for (const row of added) {
-    await emitEvent(env, "suppression.added", eventData(row), hooks);
-  }
+  await emitEvents(env, "suppression.added", added.map(eventData), hooks);
 
   return added;
 }
@@ -160,9 +158,7 @@ export async function removeSuppressions(
     for (const r of results) removed.push(...r.results);
   }
 
-  for (const row of removed) {
-    await emitEvent(env, "suppression.removed", eventData(row));
-  }
+  await emitEvents(env, "suppression.removed", removed.map(eventData));
 
   return removed;
 }

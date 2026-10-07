@@ -167,4 +167,46 @@ describe("dashboard suppressions batch add", () => {
 
     expect(noHeader.status).toBe(400);
   });
+
+  it("reads the webhooks once and sends one queue batch", async () => {
+    await env.DB.prepare("DELETE FROM webhooks").run();
+    await createWebhook(env, {
+      endpoint: "https://hooks.example.com/bulk",
+      events: ["suppression.added", "suppression.removed"],
+    });
+
+    const sent = vi.spyOn(env.HOOKS_QUEUE, "sendBatch").mockResolvedValue(SENT);
+    const real = env.DB.prepare.bind(env.DB);
+    let hookReads = 0;
+
+    const spy = vi.spyOn(env.DB, "prepare").mockImplementation((sql) => {
+      if (sql.includes("FROM webhooks WHERE status = 'enabled'")) hookReads++;
+
+      return real(sql);
+    });
+
+    try {
+      const emails = Array.from(
+        { length: 6 },
+        (_, i) => `bulk${i}@example.com`,
+      );
+
+      expect((await batch({ emails })).status).toBe(200);
+
+      const removed = await call("/api/suppressions/bulk0%40example.com", {
+        method: "DELETE",
+        headers,
+      });
+
+      expect(removed.status).toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+
+    // One read for the six adds, one for the remove.
+    expect(hookReads).toBe(2);
+    expect(sent).toHaveBeenCalledTimes(2);
+    expect([...sent.mock.calls[0]![0]]).toHaveLength(6);
+    sent.mockRestore();
+  });
 });

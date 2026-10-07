@@ -251,12 +251,23 @@ export async function fanout(
 // webhook that wants the type. The message holds the full body, as a test
 // event does. It never throws: the caller has done its work, and a failed
 // webhook must not undo it. A failure goes to the system events.
-export async function emitEvent(
+export const emitEvent = (
   env: Env,
   type: string,
   data: JsonObject,
   loaded?: Hook[],
+): Promise<void> => emitEvents(env, type, [data], loaded);
+
+// Sends many events of one type. It reads the hooks one time and puts the
+// messages on the queue in batches of 100. It never throws.
+export async function emitEvents(
+  env: Env,
+  type: string,
+  items: JsonObject[],
+  loaded?: Hook[],
 ): Promise<void> {
+  if (!items.length) return;
+
   try {
     const hooks = (loaded ?? (await loadHooks(env))).filter((h) =>
       h.events.includes(type),
@@ -264,22 +275,24 @@ export async function emitEvent(
 
     if (!hooks.length) return;
 
-    const body = JSON.stringify({
-      type,
-      created_at: new Date().toISOString(),
-      data,
-    });
+    const createdAt = new Date().toISOString();
 
-    await env.HOOKS_QUEUE.sendBatch(
-      hooks.map((hook) => ({
+    const messages = items.flatMap((data) => {
+      const body = JSON.stringify({ type, created_at: createdAt, data });
+
+      return hooks.map((hook) => ({
         body: {
           webhookId: hook.id,
           messageId: newMessageId(),
           eventId: null,
           body,
         },
-      })),
-    );
+      }));
+    });
+
+    for (let i = 0; i < messages.length; i += 100) {
+      await env.HOOKS_QUEUE.sendBatch(messages.slice(i, i + 100));
+    }
   } catch (err) {
     await logSystemEvent(env, {
       level: "warn",
