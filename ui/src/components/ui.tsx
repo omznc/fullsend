@@ -4,6 +4,7 @@ import {
   createContext,
   type InputHTMLAttributes,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent,
   type ReactNode,
   type TextareaHTMLAttributes,
   useCallback,
@@ -1022,6 +1023,28 @@ export function CopyButton({
   );
 }
 
+// A time in a row paints above the cover link of the row. Send its click
+// to the cover, with the same modifier keys, so the row opens.
+function passToCover(e: MouseEvent<HTMLElement>) {
+  const cover = e.currentTarget
+    .closest(".fs-row")
+    ?.querySelector(":scope > .fs-row-cover");
+
+  if (!cover) return;
+  e.preventDefault();
+  cover.dispatchEvent(
+    new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: e.button,
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+    }),
+  );
+}
+
 // Relative time with the exact UTC time on hover and focus.
 export function RelTime({
   at,
@@ -1039,6 +1062,7 @@ export function RelTime({
     <time
       dateTime={at}
       tabIndex={0}
+      onClick={passToCover}
       title={exact}
       aria-label={`${relative(at, now)}, ${exact}`}
       className={cx(
