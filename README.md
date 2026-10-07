@@ -271,25 +271,26 @@ These routes need a full access key. They read the request log (see below).
 
 ### Differences from Resend
 
-| Area               | fullsend                                                                          |
-| ------------------ | --------------------------------------------------------------------------------- |
-| Email size         | 5 MiB or less, with attachments. This is the Cloudflare limit.                    |
-| `path` attachments | 10 or fewer in one email. fullsend fetches them one by one.                       |
-| `reply_to`         | Cloudflare sends only the first address.                                          |
-| Missing features   | No templates, audiences, contacts, broadcasts or receiving.                       |
-| Missing endpoints  | No `POST /emails/:id/share`.                                                      |
-| Logs               | No request body, response body or `user_agent`. The log keeps 14 days.            |
-| Domain `region`    | Only `global`. Any other value gives a 422.                                       |
-| Domain `tls`       | Only `opportunistic`. `enforced` gives a 422.                                     |
-| Domain fields      | `custom_return_path` must be `send`. `tracking_subdomain` gives a 422.            |
-| Tracking           | Open and click tracking are on by default for a new domain.                       |
-| Domains            | Must be in a Cloudflare zone of the same account.                                 |
-| Rate limit         | The limit per key has steps of 10 requests per second.                            |
-| Suppression ids    | An id is `sup_` and the base64url address, not a UUID.                            |
-| Suppression batch  | 100 addresses or fewer in one request.                                            |
-| Metrics            | UTC only. No `received`, `unsubscribed` or broadcast data.                        |
-| Webhook events     | Each type is accepted. fullsend does not send contact, topic or receiving events. |
-| Event attempts     | An attempt with no response has `http_status_code` 0.                             |
+| Area                  | fullsend                                                                                     |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| Email size            | 5 MiB or less, with attachments. This is the Cloudflare limit.                               |
+| `path` attachments    | 10 or fewer in one email. fullsend fetches them one by one.                                  |
+| `reply_to`            | Cloudflare sends only the first address.                                                     |
+| Missing features      | No templates, audiences, contacts, broadcasts or receiving.                                  |
+| Missing endpoints     | No `POST /emails/:id/share`.                                                                 |
+| Logs                  | No request body, response body or `user_agent`. The log keeps 14 days.                       |
+| Domain `region`       | Only `global`. Any other value gives a 422.                                                  |
+| Domain `tls`          | Only `opportunistic`. `enforced` gives a 422.                                                |
+| Domain fields         | `custom_return_path` must be `send`. `tracking_subdomain` gives a 422.                       |
+| Domain `capabilities` | `sending` must be `enabled` and `receiving` must be `disabled`. Any other value gives a 422. |
+| Tracking              | Open and click tracking are on by default for a new domain.                                  |
+| Domains               | Must be in a Cloudflare zone of the same account.                                            |
+| Rate limit            | The limit per key has steps of 10 requests per second.                                       |
+| Suppression ids       | An id is `sup_` and the base64url address, not a UUID.                                       |
+| Suppression batch     | 100 addresses or fewer in one request.                                                       |
+| Metrics               | UTC only. No `received`, `unsubscribed` or broadcast data.                                   |
+| Webhook events        | Each type is accepted. fullsend does not send contact, topic or receiving events.            |
+| Event attempts        | An attempt with no response has `http_status_code` 0.                                        |
 
 #### Ignored emails
 

@@ -28,6 +28,10 @@ describe("domain fields that fullsend cannot honor", () => {
     ["tls", { tls: "sometimes" }],
     ["custom_return_path", { custom_return_path: "bounce" }],
     ["tracking_subdomain", { tracking_subdomain: "links" }],
+    ["capabilities.receiving", { capabilities: { receiving: "enabled" } }],
+    ["capabilities.sending", { capabilities: { sending: "disabled" } }],
+    ["capabilities", { capabilities: { sending: "enabled", other: "x" } }],
+    ["capabilities", { capabilities: "enabled" }],
   ])("refuses %s on create", async (field, extra) => {
     const res = await send("POST", "/domains", {
       name: "new.example.com",
@@ -50,6 +54,7 @@ describe("domain fields that fullsend cannot honor", () => {
       region: "global",
       tls: "opportunistic",
       custom_return_path: "send",
+      capabilities: { sending: "enabled", receiving: "disabled" },
     });
 
     expect(res.status).toBe(403);
@@ -68,6 +73,14 @@ describe("domain fields that fullsend cannot honor", () => {
     expect(
       (
         await send("PATCH", `/domains/${id}`, {
+          capabilities: { receiving: "enabled" },
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      (
+        await send("PATCH", `/domains/${id}`, {
+          capabilities: { sending: "enabled" },
           tls: "opportunistic",
           open_tracking: false,
         })

@@ -13,6 +13,7 @@ import { ApiError, notFound, validation } from "../lib/errors";
 import { isHostname } from "../lib/http";
 import {
   isBoolean,
+  isJsonObject,
   isString,
   type JsonObject,
   type JsonValue,
@@ -52,32 +53,74 @@ function present(value: JsonValue | undefined): boolean {
   return value !== undefined && value !== null;
 }
 
-function checkUnsupported(input: JsonObject, create: boolean): void {
-  const { region, custom_return_path: path, tls } = input;
+// The capabilities of a domain. fullsend always sends and never receives.
+// The Resend defaults are accepted, and any other value gets a 422.
+const CAPABILITIES = new Map([
+  ["sending", "enabled"],
+  ["receiving", "disabled"],
+]);
 
-  if (create && present(region) && region !== REGION) {
+function checkCapabilities(value: JsonValue | undefined): void {
+  if (!present(value)) return;
+
+  if (!isJsonObject(value)) {
+    throw validation("`capabilities` must be an object.");
+  }
+
+  for (const [name, mode] of Object.entries(value)) {
+    const fixed = CAPABILITIES.get(name);
+
+    if (fixed === undefined) {
+      throw validation(
+        `fullsend does not know \`capabilities.${name}\`. Use \`sending\` or \`receiving\`.`,
+      );
+    }
+
+    if (present(mode) && mode !== fixed) {
+      throw validation(
+        `fullsend cannot change \`capabilities.${name}\`. It is always "${fixed}". Remove it or set it to "${fixed}".`,
+      );
+    }
+  }
+}
+
+// The fields that only a create can set.
+function checkCreateOnly(input: JsonObject): void {
+  const { region, custom_return_path: path } = input;
+
+  if (present(region) && region !== REGION) {
     throw validation(
       `fullsend sends from the "${REGION}" region only. Remove \`region\` or set it to "${REGION}".`,
     );
   }
 
-  if (create && present(path) && path !== RETURN_PATH) {
+  if (present(path) && path !== RETURN_PATH) {
     throw validation(
       `fullsend cannot set \`custom_return_path\`: Cloudflare sets the return path. Remove it or set it to "${RETURN_PATH}".`,
     );
   }
+}
 
-  if (present(tls)) {
-    if (!isString(tls) || !TLS_MODES.includes(tls)) {
-      throw validation("`tls` must be `opportunistic` or `enforced`.");
-    }
+function checkTls(tls: JsonValue | undefined): void {
+  if (!present(tls)) return;
 
-    if (tls === "enforced") {
-      throw validation(
-        "fullsend cannot enforce TLS: Cloudflare sets the TLS mode. Remove `tls` or set it to `opportunistic`.",
-      );
-    }
+  if (!isString(tls) || !TLS_MODES.includes(tls)) {
+    throw validation("`tls` must be `opportunistic` or `enforced`.");
   }
+
+  if (tls === "enforced") {
+    throw validation(
+      "fullsend cannot enforce TLS: Cloudflare sets the TLS mode. Remove `tls` or set it to `opportunistic`.",
+    );
+  }
+}
+
+function checkUnsupported(input: JsonObject, create: boolean): void {
+  checkCapabilities(input.capabilities);
+
+  if (create) checkCreateOnly(input);
+
+  checkTls(input.tls);
 
   if (present(input.tracking_subdomain)) {
     throw validation(
