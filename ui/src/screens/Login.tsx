@@ -168,7 +168,7 @@ function Locked({
   const [code, setCode] = useState(false);
 
   // After the save, wait for the Worker version that has the secrets. The
-  // poll stops after 90 tries, or when the tab is hidden.
+  // poll pauses while the tab is hidden. It stops after 90 tries.
   const poll = usePoll(
     () =>
       api<{ token_set: boolean }>("/setup/token")

@@ -34,7 +34,7 @@ export function StepCloudflare({ flow }: { flow: Flow }) {
   // A pasted token reaches the Worker some seconds after the save.
   const [saved, setSaved] = useState(false);
 
-  // The poll stops after 40 tries, or when the tab is hidden.
+  // The poll pauses while the tab is hidden. It stops after 40 tries.
   const poll = usePoll(
     () => (busy ? Promise.resolve() : cf.reload()),
     saved && !cf.data?.token_set ? 3000 : null,
