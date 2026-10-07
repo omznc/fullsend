@@ -289,18 +289,137 @@ describe("dashboard webhook deliveries", () => {
       }),
     ]);
 
-    // A longer time reaches the old event too.
+    // A longer time reaches the old event too. The first call queued
+    // r-gave-up already, so it stays out.
     sent.mockClear();
 
     const wide = await resend(hook.id, {
       since: new Date(Date.now() - 96 * HOUR).toISOString(),
     });
 
-    expect(await wide.json()).toMatchObject({ queued: 2 });
+    expect(await wide.json()).toMatchObject({ queued: 1 });
+    expect([...sent.mock.calls[0]![0]][0]!.body.messageId).toBe("r-old");
 
     // A webhook that is off cannot send again.
     await patch(hook.id, { status: "disabled" });
     expect((await resend(hook.id, { since })).status).toBe(422);
     sent.mockRestore();
+  });
+
+  describe("send again twice", () => {
+    const since = () => new Date(Date.now() - 24 * HOUR).toISOString();
+
+    const failed = (count: number, prefix: string): Seed[] =>
+      Array.from({ length: count }, (_, i) => ({
+        message: `${prefix}-${i}`,
+        attempt: 8,
+        status: 500,
+        ago: HOUR,
+      }));
+
+    const newHook = (path: string) =>
+      createWebhook(env, {
+        endpoint: `https://hooks.example.com/${path}`,
+        events: ["email.sent"],
+      });
+
+    const queuedIds = (sent: ReturnType<typeof vi.spyOn>) =>
+      sent.mock.calls.flatMap((c: [{ body: { messageId: string } }[]]) =>
+        c[0].map((m) => m.body.messageId),
+      );
+
+    it("queues an event once when the call comes twice", async () => {
+      const hook = await newHook("twice");
+      await seed(hook.id, failed(3, "t"));
+
+      const sent = vi
+        .spyOn(env.HOOKS_QUEUE, "sendBatch")
+        .mockResolvedValue(SENT);
+
+      const first = await (await resend(hook.id, { since: since() })).json();
+      const second = await (await resend(hook.id, { since: since() })).json();
+
+      expect(first).toMatchObject({ queued: 3, more: false });
+      expect(second).toMatchObject({ queued: 0, more: false });
+      expect(queuedIds(sent).toSorted()).toEqual(["t-0", "t-1", "t-2"]);
+      sent.mockRestore();
+    });
+
+    it("queues an event once when two calls run together", async () => {
+      const hook = await newHook("parallel");
+      await seed(hook.id, failed(5, "p"));
+
+      const sent = vi
+        .spyOn(env.HOOKS_QUEUE, "sendBatch")
+        .mockResolvedValue(SENT);
+
+      await Promise.all([
+        resend(hook.id, { since: since() }),
+        resend(hook.id, { since: since() }),
+      ]);
+
+      const ids = queuedIds(sent);
+
+      expect(ids).toHaveLength(5);
+      expect(new Set(ids).size).toBe(5);
+      sent.mockRestore();
+    });
+
+    it("sends the next events when more than 500 are left", async () => {
+      const hook = await newHook("many");
+      await seed(hook.id, failed(520, "m"));
+
+      const sent = vi
+        .spyOn(env.HOOKS_QUEUE, "sendBatch")
+        .mockResolvedValue(SENT);
+
+      const first = await (await resend(hook.id, { since: since() })).json();
+      const second = await (await resend(hook.id, { since: since() })).json();
+
+      expect(first).toMatchObject({ queued: 500, more: true });
+      expect(second).toMatchObject({ queued: 20, more: false });
+      expect(new Set(queuedIds(sent)).size).toBe(520);
+      sent.mockRestore();
+    });
+
+    it("sends an event again after a new failed attempt", async () => {
+      const hook = await newHook("again");
+      await seed(hook.id, failed(1, "a"));
+
+      const sent = vi
+        .spyOn(env.HOOKS_QUEUE, "sendBatch")
+        .mockResolvedValue(SENT);
+
+      expect(
+        await (await resend(hook.id, { since: since() })).json(),
+      ).toMatchObject({ queued: 1 });
+
+      // The consumer wrote a new failed attempt after the mark.
+      await seed(hook.id, [
+        { message: "a-0", attempt: 8, status: 502, ago: -1000 },
+      ]);
+
+      expect(
+        await (await resend(hook.id, { since: since() })).json(),
+      ).toMatchObject({ queued: 1 });
+      sent.mockRestore();
+    });
+
+    it("frees the events when the queue refuses them", async () => {
+      const hook = await newHook("refused");
+      await seed(hook.id, failed(2, "x"));
+
+      const sent = vi
+        .spyOn(env.HOOKS_QUEUE, "sendBatch")
+        .mockRejectedValueOnce(new Error("queue down"))
+        .mockResolvedValue(SENT);
+
+      expect((await resend(hook.id, { since: since() })).status).toBe(500);
+
+      const retry = await resend(hook.id, { since: since() });
+
+      expect(await retry.json()).toMatchObject({ queued: 2 });
+      sent.mockRestore();
+    });
   });
 });

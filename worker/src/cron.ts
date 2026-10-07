@@ -535,6 +535,13 @@ export async function retention(
     now - DAY,
   );
   await oldRows(
+    "webhook_replays",
+    "webhook_replays",
+    "queued_at < ?",
+    CHUNK,
+    now - DAY,
+  );
+  await oldRows(
     "auth_attempts",
     "auth_attempts",
     "updated_at < ?1 AND locked_until < ?2",

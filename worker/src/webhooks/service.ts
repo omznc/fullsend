@@ -141,6 +141,7 @@ export async function deleteWebhook(env: Env, id: string): Promise<void> {
     env.DB.prepare("DELETE FROM webhook_deliveries WHERE webhook_id = ?").bind(
       id,
     ),
+    env.DB.prepare("DELETE FROM webhook_replays WHERE webhook_id = ?").bind(id),
   ]);
 }
 

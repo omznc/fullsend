@@ -268,11 +268,112 @@ export const MAX_REPLAY = 500;
 // 256 KB at most, and a stored body can be large.
 const REPLAY_CHUNK = 20;
 
+// An event that "send again" queued stays out of the next call for this
+// long, or until the consumer writes a new attempt. A queue message that is
+// lost can then be sent again after this time.
+const REPLAY_HOLD_MS = 60 * 60 * 1000;
+
+// The ids of the failed events, newest first. It reads one more than
+// MAX_REPLAY, so that the caller can see that others are left. An event
+// that a call of "send again" queued, and that has no newer attempt, is not
+// in the list.
+async function findFailed(
+  env: Env,
+  webhookId: string,
+  since: number,
+  now: number,
+): Promise<string[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT d.message_id FROM webhook_deliveries d
+     WHERE d.webhook_id = ?1 AND d.created_at >= ?2 AND d.attempt >= ?3
+       AND (d.status_code IS NULL OR d.status_code < 200 OR d.status_code > 299)
+       AND NOT EXISTS (
+         SELECT 1 FROM webhook_deliveries x
+         WHERE x.webhook_id = d.webhook_id AND x.message_id = d.message_id
+           AND (x.created_at > d.created_at
+             OR (x.created_at = d.created_at AND x.id > d.id)))
+       AND NOT EXISTS (
+         SELECT 1 FROM webhook_replays r
+         WHERE r.webhook_id = d.webhook_id AND r.message_id = d.message_id
+           AND r.queued_at >= ?5 AND r.queued_at >= d.created_at)
+     GROUP BY d.message_id ORDER BY MAX(d.created_at) DESC LIMIT ?4`,
+  )
+    .bind(webhookId, since, MAX_ATTEMPTS, MAX_REPLAY + 1, now - REPLAY_HOLD_MS)
+    .all<{ message_id: string }>();
+
+  return results.map((r) => r.message_id);
+}
+
+// Marks the events as queued and returns the ids that this call marked. A
+// second call at the same time gets none of the same ids, because the
+// insert is one statement. An old mark, or a mark with a newer attempt
+// after it, is taken over.
+async function claimReplays(
+  env: Env,
+  webhookId: string,
+  ids: string[],
+  now: number,
+): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+
+  const { results } = await env.DB.prepare(
+    `INSERT INTO webhook_replays (webhook_id, message_id, queued_at)
+     SELECT ?1, value, ?2 FROM json_each(?3) WHERE true
+     ON CONFLICT (webhook_id, message_id) DO UPDATE SET queued_at = excluded.queued_at
+       WHERE webhook_replays.queued_at < ?4
+         OR webhook_replays.queued_at < (
+           SELECT MAX(x.created_at) FROM webhook_deliveries x
+           WHERE x.webhook_id = ?1 AND x.message_id = webhook_replays.message_id)
+     RETURNING message_id`,
+  )
+    .bind(webhookId, now, JSON.stringify(ids), now - REPLAY_HOLD_MS)
+    .all<{ message_id: string }>();
+
+  return new Set(results.map((r) => r.message_id));
+}
+
+async function releaseReplays(
+  env: Env,
+  webhookId: string,
+  ids: string[],
+): Promise<void> {
+  if (!ids.length) return;
+
+  await env.DB.prepare(
+    "DELETE FROM webhook_replays WHERE webhook_id = ? AND message_id IN (SELECT value FROM json_each(?))",
+  )
+    .bind(webhookId, JSON.stringify(ids))
+    .run();
+}
+
+// Sends the messages in chunks. When a chunk fails, the marks of the
+// messages that were not sent go away, so that a new call can send them.
+async function sendReplays(
+  env: Env,
+  webhookId: string,
+  messages: { body: HookMessage }[],
+): Promise<void> {
+  for (let i = 0; i < messages.length; i += REPLAY_CHUNK) {
+    try {
+      await env.HOOKS_QUEUE.sendBatch(messages.slice(i, i + REPLAY_CHUNK));
+    } catch (err) {
+      await releaseReplays(
+        env,
+        webhookId,
+        messages.slice(i).map((m) => m.body.messageId),
+      );
+
+      throw err;
+    }
+  }
+}
+
 // Puts the failed events of a webhook on the hooks queue again. An event
 // is failed when its last attempt used the last delay and still failed,
 // and that attempt is not older than `since` (epoch milliseconds). An event
-// that the queue still retries is left alone. The call sends the newest
-// MAX_REPLAY events, and `more` says that others are left.
+// that the queue still retries is left alone. An event that an earlier call
+// queued is left alone until its new attempt exists. The call sends the
+// newest MAX_REPLAY events, and `more` says that others are left.
 export async function replayFailed(
   env: Env,
   webhookId: string,
@@ -284,33 +385,27 @@ export async function replayFailed(
     throw validation("The webhook is disabled. Enable it to replay events.");
   }
 
-  const { results } = await env.DB.prepare(
-    `SELECT d.message_id FROM webhook_deliveries d
-     WHERE d.webhook_id = ?1 AND d.created_at >= ?2 AND d.attempt >= ?3
-       AND (d.status_code IS NULL OR d.status_code < 200 OR d.status_code > 299)
-       AND NOT EXISTS (
-         SELECT 1 FROM webhook_deliveries x
-         WHERE x.webhook_id = d.webhook_id AND x.message_id = d.message_id
-           AND (x.created_at > d.created_at
-             OR (x.created_at = d.created_at AND x.id > d.id)))
-     GROUP BY d.message_id ORDER BY MAX(d.created_at) DESC LIMIT ?4`,
-  )
-    .bind(webhookId, since, MAX_ATTEMPTS, MAX_REPLAY + 1)
-    .all<{ message_id: string }>();
-
-  const ids = results.slice(0, MAX_REPLAY).map((r) => r.message_id);
+  const now = Date.now();
+  const failed = await findFailed(env, webhookId, since, now);
+  const ids = failed.slice(0, MAX_REPLAY);
   const found = await lastAttempts(env, webhookId, ids);
-  const messages: { body: HookMessage }[] = [];
 
-  for (const id of ids) {
+  const claimed = await claimReplays(
+    env,
+    webhookId,
+    ids.filter((id) => found.has(id)),
+    now,
+  );
+
+  const messages = ids.flatMap((id) => {
     const hit = found.get(id);
 
-    if (hit) messages.push({ body: replayMessage(webhookId, id, hit.first) });
-  }
+    return hit && claimed.has(id)
+      ? [{ body: replayMessage(webhookId, id, hit.first) }]
+      : [];
+  });
 
-  for (let i = 0; i < messages.length; i += REPLAY_CHUNK) {
-    await env.HOOKS_QUEUE.sendBatch(messages.slice(i, i + REPLAY_CHUNK));
-  }
+  await sendReplays(env, webhookId, messages);
 
-  return { queued: messages.length, more: results.length > MAX_REPLAY };
+  return { queued: messages.length, more: failed.length > MAX_REPLAY };
 }

@@ -238,6 +238,22 @@ export const webhookDeliveries = sqliteTable(
   ],
 );
 
+// A marker for a webhook event that "send again" put on the queue. It stops
+// a second call from queueing the same event before the consumer writes the
+// new attempt. See replayFailed in src/webhooks/events.ts.
+export const webhookReplays = sqliteTable(
+  "webhook_replays",
+  {
+    webhookId: text("webhook_id").notNull(),
+    messageId: text("message_id").notNull(),
+    queuedAt: integer("queued_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.webhookId, t.messageId] }),
+    index("webhook_replays_queued").on(t.queuedAt),
+  ],
+);
+
 // The count of password and setup code attempts for each client, each
 // IPv6 site and each minute. See src/dashboard/attempts.ts.
 export const authAttempts = sqliteTable("auth_attempts", {
