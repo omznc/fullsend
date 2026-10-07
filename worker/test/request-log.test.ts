@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { call, dashSession, newKey } from "./helpers";
 
 interface Row {
@@ -74,19 +74,46 @@ describe("request log", () => {
     expect(row!.error_message).toBeNull();
   });
 
-  it("logs a request with no key and never stores the token", async () => {
+  it("logs no request with a missing or a wrong key", async () => {
     await call("/emails");
     await call("/emails", {
       headers: { Authorization: "Bearer fs_bad_token" },
     });
 
-    const found = await waitForRows(2);
+    const { token, id } = await newKey();
 
-    expect(found.map((r) => [r.status, r.error_name, r.api_key_id])).toEqual([
-      [401, "missing_api_key", null],
-      [403, "invalid_api_key", null],
-    ]);
+    await call("/domains", { headers: { Authorization: `Bearer ${token}` } });
+
+    const found = await waitForRows(1);
+    await settle();
+
+    const all = await rows();
+
+    expect(all.map((r) => [r.path, r.api_key_id])).toEqual([["/domains", id]]);
     expect(JSON.stringify(found)).not.toContain("fs_bad_token");
+  });
+
+  it("logs no 429 response", async () => {
+    const { token } = await newKey();
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const limit = vi
+      .spyOn(env.RATE_LIMITER, "limit")
+      .mockResolvedValue({ success: false });
+
+    try {
+      const res = await call("/domains", { headers });
+
+      expect(res.status).toBe(429);
+    } finally {
+      limit.mockRestore();
+    }
+
+    await call("/domains", { headers });
+    await waitForRows(1);
+    await settle();
+
+    expect((await rows()).map((r) => r.status)).toEqual([200]);
   });
 
   it("does not log tracking, health or dashboard requests", async () => {

@@ -7,8 +7,9 @@ import { getSettingsCached } from "./settings";
 import { errorText } from "./system-events";
 
 // The request log: one api_requests row for each request to a Resend
-// route. A row has no body, no header and no API key. The path has no
-// query string.
+// route that has a valid API key. A row has no body, no header and no API
+// key. The path has no query string. A request with no valid key, and a
+// 429 response, have no row: a client with no key must not fill the table.
 
 const MAX_TEXT = 500;
 
@@ -72,6 +73,11 @@ async function writeEntry(env: Env, e: LogEntry): Promise<void> {
   }
 }
 
+// True when the request must have a log row.
+function isLogged(keyId: string | null, status: number): boolean {
+  return keyId !== null && status !== 429;
+}
+
 // Writes the log row after the response, with waitUntil, so it adds no
 // latency.
 export const requestLog = createMiddleware<ApiVars>(async (c, next) => {
@@ -82,12 +88,16 @@ export const requestLog = createMiddleware<ApiVars>(async (c, next) => {
   await next();
 
   try {
+    const keyId = c.get("apiKey")?.id ?? null;
+
+    if (!isLogged(keyId, c.res.status)) return;
+
     const entry: LogEntry = {
       at,
       method: c.req.method,
       path: c.req.path,
       status: c.res.status,
-      keyId: c.get("apiKey")?.id ?? null,
+      keyId,
       error: failures.get(c.req.raw),
       durationMs: Date.now() - at,
     };
