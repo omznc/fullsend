@@ -12,6 +12,10 @@ in Settings and in `GET /health`.
 - Keep the claim when the write of the message ID fails. The consumer
   tries the write 4 times, then it writes an `error` system event.
 - Record a failed event when the put on the queue fails.
+- Mark the start of a send. The consumer writes `claim_token` and
+  `send_started_at` before it calls `EMAIL.send`. A later copy of the
+  message takes an expired claim only when the mark is not set. This
+  needs migration `0006_send_started_mark`.
 - Widen the pending window of an idempotency key.
 - Store dead queue messages in the system events.
 - Delete the R2 bodies together with the old rows in the retention job.
@@ -31,7 +35,7 @@ in Settings and in `GET /health`.
 - Page the lists of domains, API keys and webhooks with `limit`, `after`
   and `before`.
 - Refuse the domain fields that fullsend ignores (`region`, `tls`,
-  `custom_return_path` and `tracking_subdomain`) with a 422.
+  `custom_return_path`, `tracking_subdomain` and `capabilities`) with a 422.
 - Accept all 23 webhook event types of the SDK.
 - Send `domain.updated` when the status of a domain changes.
 
@@ -43,7 +47,9 @@ in Settings and in `GET /health`.
 - `GET /emails/:id/attachments` and `GET /emails/:id/attachments/:id`,
   with a signed download link that expires after one hour.
 - `GET /webhooks/:id/events`, the event, its attempts, and
-  `POST /webhooks/:id/events/:id/replay`.
+  `POST /webhooks/:id/events/:id/replay`. A replay mark in the table
+  `webhook_replays` stops a second replay of the same event for a short
+  time. This needs migration `0004_webhook_replays`.
 - `GET /emails/metrics`.
 - `GET /logs` and `GET /logs/:id` read the request log, with the shape of
   the Resend SDK. fullsend stores no body and no `user_agent`, so these
@@ -53,9 +59,11 @@ in Settings and in `GET /health`.
 
 ### Request log
 
-- Write one `api_requests` row for each request to a Resend API route.
-  The row has the method, the path, the status, the API key, the time
-  taken, and the error name and message. It has no body, header or key.
+- Write one `api_requests` row for each request to a Resend API route
+  that has a valid API key. A request with no valid key has no row, and a
+  429 response has no row. The row has the method, the path, the status,
+  the API key id, the time taken, and the error name and message. It has
+  no body, header or key.
 - Keep the rows for 14 days.
 - Add the `request_log` setting (on by default) and a toggle in Settings.
 - Add the Logs screen and `GET /api/logs`. The filters are the status, the
