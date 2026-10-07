@@ -380,6 +380,10 @@ export const API_REQUESTS_KEEP = 14 * DAY;
 // list as one JSON text, because D1 allows 100 bound values at most.
 const CHUNK = 500;
 
+// The request log grows with the traffic, so its step uses larger chunks.
+// A step of 20 rounds clears 100,000 rows in one run.
+const LOG_CHUNK = 5000;
+
 // Each step runs this many rounds at most, and the whole run stops at the
 // time budget. The next run does the rest.
 const MAX_ROUNDS = 20;
@@ -409,7 +413,7 @@ export async function retention(
 
   // Runs a round again while it has full chunks. A round returns the
   // number of rows that it handled.
-  const loop = async (round: () => Promise<number>) => {
+  const loop = async (round: () => Promise<number>, chunk: number) => {
     for (let i = 0; i < MAX_ROUNDS; i++) {
       if (Date.now() >= deadline) {
         result.complete = false;
@@ -419,15 +423,19 @@ export async function retention(
 
       result.rounds++;
 
-      if ((await round()) < CHUNK) return;
+      if ((await round()) < chunk) return;
     }
 
     result.complete = false;
   };
 
-  const step = async (name: string, round: () => Promise<number>) => {
+  const step = async (
+    name: string,
+    round: () => Promise<number>,
+    chunk = CHUNK,
+  ) => {
     try {
-      await loop(round);
+      await loop(round, chunk);
     } catch (err) {
       // A failed step does not stop the other steps.
       result.complete = false;
@@ -495,34 +503,42 @@ export async function retention(
     name: string,
     table: string,
     where: string,
+    chunk: number,
     ...bind: number[]
   ) =>
-    step(name, async () => {
-      const done = await env.DB.prepare(
-        `DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${where} LIMIT ${CHUNK})`,
-      )
-        .bind(...bind)
-        .run();
+    step(
+      name,
+      async () => {
+        const done = await env.DB.prepare(
+          `DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} WHERE ${where} LIMIT ${chunk})`,
+        )
+          .bind(...bind)
+          .run();
 
-      return done.meta.changes;
-    });
+        return done.meta.changes;
+      },
+      chunk,
+    );
 
   await oldRows(
     "webhook_deliveries",
     "webhook_deliveries",
     "created_at < ?",
+    CHUNK,
     rowCutoff,
   );
   await oldRows(
     "idempotency_keys",
     "idempotency_keys",
     "created_at < ?",
+    CHUNK,
     now - DAY,
   );
   await oldRows(
     "auth_attempts",
     "auth_attempts",
     "updated_at < ?1 AND locked_until < ?2",
+    CHUNK,
     now - DAY,
     now,
   );
@@ -530,12 +546,14 @@ export async function retention(
     "system_events",
     "system_events",
     "created_at < ?",
+    CHUNK,
     now - SYSTEM_EVENTS_KEEP,
   );
   await oldRows(
     "api_requests",
     "api_requests",
     "created_at < ?",
+    LOG_CHUNK,
     now - API_REQUESTS_KEEP,
   );
 

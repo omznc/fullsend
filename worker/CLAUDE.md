@@ -23,6 +23,8 @@ first.
   sweeps stuck emails each minute, syncs the domains each 15 minutes, and
   runs retention at minute 7 of each hour. Retention works in chunks of 500
   rows with a time budget, so a run can stop and the next hour finishes it.
+  The request log (`api_requests`) has a larger chunk of 5,000 rows, because
+  it grows with the traffic. One run clears 100,000 rows of it at most.
   It deletes the R2 bodies before the rows. A failure of a job goes to
   `system_events` through `logSystemEvent` (`src/lib/system-events.ts`).
 - `scripts/create-key.ts`: makes an API key and its SQL without the

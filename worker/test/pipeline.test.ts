@@ -1308,13 +1308,13 @@ describe("retention", () => {
     const now = Date.now();
 
     await env.DB.prepare(
-      `INSERT INTO api_requests (id, created_at, method, path, status, duration_ms)
-       SELECT value, ?2, 'GET', '/old', 200, 1 FROM json_each(?1)`,
+      `INSERT INTO system_events (id, created_at, level, source, message)
+       SELECT value, ?2, 'warn', 'chunk-test', 'old' FROM json_each(?1)`,
     )
-      .bind(JSON.stringify(ids), now - 15 * 86_400_000)
+      .bind(JSON.stringify(ids), now - 31 * 86_400_000)
       .run();
     await env.DB.prepare(
-      "INSERT INTO api_requests (id, created_at, method, path, status, duration_ms) VALUES ('recent', ?, 'GET', '/recent', 200, 1)",
+      "INSERT INTO system_events (id, created_at, level, source, message) VALUES ('recent', ?, 'warn', 'chunk-test', 'new')",
     )
       .bind(now - 86_400_000)
       .run();
@@ -1323,7 +1323,7 @@ describe("retention", () => {
     let deletes = 0;
 
     const spy = vi.spyOn(env.DB, "prepare").mockImplementation((sql) => {
-      if (sql.includes("DELETE FROM api_requests")) deletes++;
+      if (sql.includes("DELETE FROM system_events")) deletes++;
 
       return real(sql);
     });
@@ -1333,6 +1333,34 @@ describe("retention", () => {
 
     expect(result.complete).toBe(true);
     expect(deletes).toBe(3);
+
+    const left = await env.DB.prepare(
+      "SELECT id FROM system_events WHERE source = 'chunk-test'",
+    ).all<{ id: string }>();
+
+    expect(left.results).toEqual([{ id: "recent" }]);
+  });
+
+  it("clears more than 10,000 old request log rows in one run", async () => {
+    const now = Date.now();
+
+    await env.DB.prepare("DELETE FROM api_requests").run();
+    await env.DB.prepare(
+      `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 12000)
+       INSERT INTO api_requests (id, created_at, method, path, status, duration_ms)
+       SELECT 'old-' || i, ?1, 'GET', '/old', 200, 1 FROM n`,
+    )
+      .bind(now - 15 * 86_400_000)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO api_requests (id, created_at, method, path, status, duration_ms) VALUES ('recent', ?, 'GET', '/recent', 200, 1)",
+    )
+      .bind(now - 86_400_000)
+      .run();
+
+    const result = await retention(env, now);
+
+    expect(result.complete).toBe(true);
 
     const left = await env.DB.prepare(
       "SELECT path FROM api_requests ORDER BY path",
