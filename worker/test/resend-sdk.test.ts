@@ -10,6 +10,7 @@ import { z } from "zod";
 import { ACCEPTED_WEBHOOK_EVENTS, WEBHOOK_EVENTS } from "../src/events/record";
 import { createKey } from "../src/keys/service";
 import { parseJsonText } from "../src/lib/json";
+import { withIdempotency } from "../src/send/idempotency";
 import { deliver } from "../src/webhooks/deliver";
 import { testBody } from "../src/webhooks/payload";
 import { addDomain, BASE, call, newKey, routeFetchToWorker } from "./helpers";
@@ -143,6 +144,82 @@ describe("emails", () => {
     expect(other.error).toMatchObject({
       statusCode: 409,
       name: "invalid_idempotent_request",
+    });
+  });
+
+  it("keeps a pending idempotency key until the longest request ends", async () => {
+    const key = "slow-1";
+    const { id: keyId } = await newKey();
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+
+    const pending = withIdempotency(env, keyId, key, "email:a", async () => {
+      await held;
+
+      return "done";
+    });
+
+    const age = async (ms: number) => {
+      await env.DB.prepare(
+        "UPDATE idempotency_keys SET created_at = ? WHERE api_key_id = ? AND key = ?",
+      )
+        .bind(Date.now() - ms, keyId, key)
+        .run();
+    };
+
+    await vi.waitFor(async () => {
+      const row = await env.DB.prepare(
+        "SELECT 1 AS found FROM idempotency_keys WHERE api_key_id = ? AND key = ?",
+      )
+        .bind(keyId, key)
+        .first();
+
+      expect(row).not.toBeNull();
+    });
+
+    // 3 minutes is longer than the old 2 minute limit, and shorter than
+    // 10 fetches of 10 seconds plus 2 minutes.
+    await age(3 * 60_000);
+
+    await expect(
+      withIdempotency(env, keyId, key, "email:a", async () => "second"),
+    ).rejects.toMatchObject({
+      errorName: "concurrent_idempotent_requests",
+    });
+
+    // A row older than the longest live request belongs to a dead one.
+    await age(4 * 60_000);
+
+    await expect(
+      withIdempotency(env, keyId, key, "email:a", async () => "second"),
+    ).resolves.toBe("second");
+
+    release();
+    await pending;
+  });
+
+  it("refuses more than 10 attachments with a path", async () => {
+    const attachments = Array.from({ length: 11 }, (_, i) => ({
+      filename: `f${i}.txt`,
+      path: `https://files.example.com/f${i}.txt`,
+    }));
+
+    // A new key has its own rate limit bucket.
+    const { token } = await newKey();
+    const client = new Resend(token, { baseUrl: BASE });
+
+    const { error } = await client.emails.send({
+      from: "a@mail.example.com",
+      to: "omar@example.net",
+      subject: "many paths",
+      text: "x",
+      attachments,
+    });
+
+    expect(error).toMatchObject({
+      statusCode: 422,
+      name: "invalid_attachment",
+      message: expect.stringContaining("10 or fewer"),
     });
   });
 
@@ -547,9 +624,20 @@ describe("pagination", () => {
 
     await resend.apiKeys.remove(made[1]!);
 
-    const ids = await walk((after) =>
-      resend.apiKeys.list(after ? { limit: 2, after } : { limit: 2 }),
-    );
+    let first: Awaited<ReturnType<typeof resend.apiKeys.list>> | undefined;
+
+    const ids = await walk(async (after) => {
+      const page = await resend.apiKeys.list(
+        after ? { limit: 2, after } : { limit: 2 },
+      );
+
+      first ??= page;
+
+      return page;
+    });
+
+    expect(first?.data?.data).toHaveLength(2);
+    expect(first?.data?.has_more).toBe(true);
 
     expect(ids).toContain(made[0]);
     expect(ids).toContain(made[2]);
@@ -1330,6 +1418,29 @@ describe("webhook events", () => {
     } finally {
       send.mockRestore();
     }
+  });
+
+  it("takes the highest attempt as the last one in the same millisecond", async () => {
+    const at = Date.now();
+
+    const insert = env.DB.prepare(
+      `INSERT INTO webhook_deliveries (id, webhook_id, message_id, event_id, event_type, attempt,
+         status_code, duration_ms, request_body, response_excerpt, error, created_at)
+       VALUES (?1, ?2, 'msg_same_ms', NULL, 'email.sent', ?3, ?4, 10, '{"type":"email.sent","data":{}}', NULL, NULL, ?5)`,
+    );
+
+    // The id of attempt 2 sorts before the id of attempt 1.
+    await env.DB.batch([
+      insert.bind("zzz-first", webhookId, 1, 500, at),
+      insert.bind("aaa-second", webhookId, 2, 200, at),
+    ]);
+
+    const got = await client.webhooks.events.get({
+      webhookId,
+      eventId: "msg_same_ms",
+    });
+
+    expect(got.data).toMatchObject({ status: "success" });
   });
 
   it("limits a sending key", async () => {
