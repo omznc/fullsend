@@ -156,14 +156,15 @@ async function claim(env: Env, id: string): Promise<string | null> {
 }
 
 // Writes the send mark before EMAIL.send. Returns false when the claim is
-// not the claim of this consumer now. Then the consumer must not send.
+// not the claim of this consumer now, or when the email is not pending
+// now (the owner canceled it). Then the consumer must not send.
 async function markSending(
   env: Env,
   id: string,
   token: string,
 ): Promise<boolean> {
   const row = await env.DB.prepare(
-    "UPDATE emails SET send_started_at = ? WHERE id = ? AND claim_token = ? RETURNING id",
+    "UPDATE emails SET send_started_at = ? WHERE id = ? AND claim_token = ? AND status IN ('queued', 'scheduled') RETURNING id",
   )
     .bind(Date.now(), id, token)
     .first();
@@ -476,7 +477,11 @@ async function sendOne(
 
   // The mark comes before the send. A copy of this message that finds the
   // mark after the claim expires does not send the email again.
-  if (!(await markSending(env, pending.id, token))) return msg.ack();
+  if (!(await markSending(env, pending.id, token))) {
+    await release(env, pending.id, token);
+
+    return msg.ack();
+  }
 
   let messageId: string;
 

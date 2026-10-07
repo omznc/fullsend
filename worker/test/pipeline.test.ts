@@ -293,6 +293,37 @@ describe("send consumer", () => {
     expect((await status(id))?.status).toBe("sent");
   });
 
+  it("does not send an email that the owner canceled in the claim", async () => {
+    const id = await plainEmail("canceled-in-claim");
+    const real = env.BODIES.get.bind(env.BODIES);
+
+    const bodies = vi
+      .spyOn(env.BODIES, "get")
+      .mockImplementationOnce(async (key) => {
+        // The consumer holds an expired claim that has no mark, so the
+        // owner can cancel the email while the consumer is slow.
+        await env.DB.prepare(
+          "UPDATE emails SET status = 'canceled' WHERE id = ?",
+        )
+          .bind(id)
+          .run();
+
+        return real(key);
+      });
+
+    let sends = 0;
+
+    const result = await runSend(
+      fakeEnv(async () => (sends++, { messageId: "never" })),
+      id,
+    );
+
+    bodies.mockRestore();
+    expect(sends).toBe(0);
+    expect(result.explicitAcks).toContain("m1");
+    expect((await status(id))?.status).toBe("canceled");
+  });
+
   it("does not end the claim of a different consumer", async () => {
     const id = await plainEmail("other-claim");
 
