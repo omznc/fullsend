@@ -19,6 +19,10 @@ async function addEmail(id: string, to: string, subject: string) {
 
 let cookie = "";
 
+// 47 bytes. A LIKE pattern with the escape of this text is over the 50
+// bytes that D1 allows.
+const LONG = "customer.support_team@billing-department.example";
+
 const ids = (rows: { id: string }[]) => rows.map((r) => r.id).toSorted();
 
 async function dash<T>(path: string): Promise<T> {
@@ -35,6 +39,7 @@ beforeAll(async () => {
   await addEmail("e3", "a@x.com", "50% off");
   await addEmail("e4", "b@x.com", "500 off");
   await addEmail("e5", "c@x.com", "back\\slash");
+  await addEmail("e6", LONG, "long");
   await env.DB.prepare(
     "INSERT INTO suppressions (address, reason, source, created_at) VALUES ('john_doe@x.com', 'manual', 'test', 0), ('johnxdoe@x.com', 'manual', 'test', 0)",
   ).run();
@@ -100,5 +105,44 @@ describe("LIKE search", () => {
     );
 
     expect(list.data.map((s) => s.address)).toEqual(["john_doe@x.com"]);
+  });
+
+  it("searches a long text with an underscore", async () => {
+    expect(
+      ids((await listEmails(env, {}, { q: "Support_Team@Billing-" })).emails),
+    ).toEqual(["e6"]);
+    expect(ids((await listEmails(env, {}, { q: LONG })).emails)).toEqual([
+      "e6",
+    ]);
+
+    const hit = await dash<{ emails: { id: string }[] }>(
+      `/api/search?q=${LONG}`,
+    );
+
+    expect(ids(hit.emails)).toEqual(["e6"]);
+
+    await env.DB.prepare(
+      "INSERT INTO suppressions (address, reason, source, created_at) VALUES (?, 'manual', 'test', 0)",
+    )
+      .bind(LONG)
+      .run();
+
+    const list = await dash<{ data: { address: string }[] }>(
+      `/api/suppressions?q=${LONG.toUpperCase()}`,
+    );
+
+    expect(list.data.map((x) => x.address)).toEqual([LONG]);
+  });
+
+  it("searches the request log with a long text", async () => {
+    await env.DB.prepare(
+      "INSERT INTO api_requests (id, created_at, method, path, status, duration_ms) VALUES ('long-log', 1, 'GET', ?, 200, 1)",
+    )
+      .bind(`/suppressions/${LONG}`)
+      .run();
+
+    const logs = await dash<{ data: { id: string }[] }>(`/api/logs?q=${LONG}`);
+
+    expect(logs.data.map((x) => x.id)).toEqual(["long-log"]);
   });
 });

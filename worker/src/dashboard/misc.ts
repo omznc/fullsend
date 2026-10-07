@@ -3,12 +3,12 @@ import { setCookie } from "hono/cookie";
 import { listDomains } from "../domains/service";
 import { normalize, parseAddress } from "../lib/address";
 import { Cloudflare, CloudflareError, hasToken } from "../lib/cloudflare";
+import { containsSql } from "../lib/contains";
 import { hashPassword } from "../lib/crypto";
 import { csvResponse, EXPORT_CHUNK, MAX_EXPORT_ROWS } from "../lib/csv";
 import { validation } from "../lib/errors";
 import { asRecord, isHostname, readJson } from "../lib/http";
 import { isString } from "../lib/json";
-import { likeContains } from "../lib/like";
 import { parsePage } from "../lib/page";
 import {
   DEFAULTS,
@@ -236,14 +236,13 @@ miscRoutes.get("/search", async (c) => {
 
   if (q.length < 2)
     return c.json({ emails: [], domains: [], api_keys: [], webhooks: [] });
-  const like = likeContains(q);
 
   const [emails, domains, keys, hooks] = await Promise.all([
     c.env.DB.prepare(
       `SELECT id, "to", subject, status, created_at FROM emails
-       WHERE id = ? OR cf_message_id = ? OR subject LIKE ? ESCAPE '\\' OR "to" LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 8`,
+       WHERE id = ? OR cf_message_id = ? OR ${containsSql("subject")} OR ${containsSql('"to"')} ORDER BY created_at DESC LIMIT 8`,
     )
-      .bind(q, q, like, like)
+      .bind(q, q, q, q)
       .all<{
         id: string;
         to: string;
@@ -252,19 +251,19 @@ miscRoutes.get("/search", async (c) => {
         created_at: number;
       }>(),
     c.env.DB.prepare(
-      "SELECT id, name, status FROM domains WHERE name LIKE ? ESCAPE '\\' LIMIT 5",
+      `SELECT id, name, status FROM domains WHERE ${containsSql("name")} LIMIT 5`,
     )
-      .bind(like)
+      .bind(q)
       .all(),
     c.env.DB.prepare(
-      "SELECT id, name, prefix FROM api_keys WHERE revoked_at IS NULL AND (name LIKE ? ESCAPE '\\' OR prefix LIKE ? ESCAPE '\\') LIMIT 5",
+      `SELECT id, name, prefix FROM api_keys WHERE revoked_at IS NULL AND (${containsSql("name")} OR ${containsSql("prefix")}) LIMIT 5`,
     )
-      .bind(like, like)
+      .bind(q, q)
       .all(),
     c.env.DB.prepare(
-      "SELECT id, endpoint, status FROM webhooks WHERE endpoint LIKE ? ESCAPE '\\' OR id = ? LIMIT 5",
+      `SELECT id, endpoint, status FROM webhooks WHERE ${containsSql("endpoint")} OR id = ? LIMIT 5`,
     )
-      .bind(like, q)
+      .bind(q, q)
       .all(),
   ]);
 
@@ -298,8 +297,8 @@ const reasonError = {
 
 // The WHERE parts of the list and the export. The search alone is `search`.
 function suppressionFilter(q: string | undefined, reason: string | undefined) {
-  const search = q ? ["address LIKE ? ESCAPE '\\'"] : [];
-  const searchParams = q ? [likeContains(q.toLowerCase())] : [];
+  const search = q ? [containsSql("address")] : [];
+  const searchParams = q ? [q] : [];
   const where = [...search];
   const params = [...searchParams];
 

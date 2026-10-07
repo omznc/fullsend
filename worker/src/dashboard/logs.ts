@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { likeContains } from "../lib/like";
+import { containsSql } from "../lib/contains";
 import { pageQuery, parsePage } from "../lib/page";
 import { getSettings } from "../lib/settings";
 import { iso } from "../lib/time";
@@ -86,8 +86,8 @@ logRoutes.get("/", async (c) => {
   const search = q.q?.trim();
 
   if (search) {
-    where.push("path LIKE ? ESCAPE '\\'");
-    params.push(likeContains(search));
+    where.push(containsSql("path"));
+    params.push(search);
   }
 
   const [{ rows, has_more }, settings] = await Promise.all([

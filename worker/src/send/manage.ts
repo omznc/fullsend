@@ -1,8 +1,8 @@
 import type { Env } from "../env";
 import { type EmailRow, recordEvent } from "../events/record";
+import { containsSql } from "../lib/contains";
 import { ApiError, notFound, validation } from "../lib/errors";
 import type { JsonValue } from "../lib/json";
-import { likeContains } from "../lib/like";
 import { type Page, pageQuery } from "../lib/page";
 import { iso, isoOrNull } from "../lib/time";
 import { CLAIM_TTL, type EmailDbRow, rowToEmail } from "./consumer";
@@ -66,6 +66,24 @@ export interface ListFilter {
   q?: string;
 }
 
+interface TagFilter {
+  sql: string;
+  params: string[];
+}
+
+// The WHERE part for a tag filter, "name" or "name:value".
+function tagFilter(tag: string): TagFilter {
+  const [name, value] = tag.split(":", 2);
+
+  const valueTest =
+    value === undefined ? "" : " AND json_extract(t.value, '$.value') = ?";
+
+  return {
+    sql: `EXISTS (SELECT 1 FROM json_each(emails.tags) t WHERE json_extract(t.value, '$.name') = ?${valueTest})`,
+    params: value === undefined ? [name!] : [name!, value],
+  };
+}
+
 export async function listEmails(
   env: Env,
   page: Page,
@@ -90,13 +108,9 @@ export async function listEmails(
   }
 
   if (filter.tag) {
-    const [name, value] = filter.tag.split(":", 2);
-    where.push(
-      `EXISTS (SELECT 1 FROM json_each(emails.tags) t WHERE json_extract(t.value, '$.name') = ?${
-        value !== undefined ? " AND json_extract(t.value, '$.value') = ?" : ""
-      })`,
-    );
-    params.push(name, ...(value !== undefined ? [value] : []));
+    const tag = tagFilter(filter.tag);
+    where.push(tag.sql);
+    params.push(...tag.params);
   }
 
   if (filter.since) {
@@ -110,11 +124,9 @@ export async function listEmails(
   }
 
   if (filter.q) {
-    const like = likeContains(filter.q);
-    where.push(
-      `(subject LIKE ? ESCAPE '\\' OR "to" LIKE ? ESCAPE '\\' OR cc LIKE ? ESCAPE '\\' OR bcc LIKE ? ESCAPE '\\' OR id = ?)`,
-    );
-    params.push(like, like, like, like, filter.q);
+    const columns = ["subject", '"to"', "cc", "bcc"].map(containsSql);
+    where.push(`(${columns.join(" OR ")} OR id = ?)`);
+    params.push(filter.q, filter.q, filter.q, filter.q, filter.q);
   }
 
   const { rows, has_more } = await pageQuery<EmailDbRow>(
