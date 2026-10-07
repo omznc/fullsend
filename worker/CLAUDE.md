@@ -44,13 +44,14 @@ first.
   it. Other errors retry with backoff up to `MAX_ATTEMPTS` (5). Keep
   `MAX_ATTEMPTS` below `max_retries` of `fullsend-send` in `wrangler.jsonc`,
   so the queue never drops a message.
-- **The cron sweep never puts a claimed email back on the queue.**
+- **The cron sweep never puts a marked email back on the queue.**
   `sweepStuck` in `src/cron.ts` runs each minute. It handles a pending
   email that is older than `STUCK_AFTER` (30 minutes). With a
-  `cf_message_id` it records the sent event. With no claim it puts the
-  email on the queue again, 3 times at most, then it fails the email. With
-  an old claim it fails the email and never sends it again: the consumer
-  can stop during `EMAIL.send`.
+  `cf_message_id` it records the sent event. With no claim, or with an
+  old claim that has no send mark, it puts the email on the queue again,
+  3 times at most, then it fails the email: that email never reached
+  `EMAIL.send`. With an old claim that has a send mark it fails the email
+  and never sends it again: the consumer can stop during `EMAIL.send`.
 - **The send claim has a token and a send mark.** The consumer
   (`src/send/consumer.ts`) takes the email with `claimed_at` and a new
   `claim_token`. Before `EMAIL.send` it writes `send_started_at` for its own

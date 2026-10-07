@@ -113,13 +113,16 @@ const SWEEP_LIMIT = 100;
 
 const PENDING_STATUS = "status IN ('queued', 'scheduled')";
 
-// A pending email with no Cloudflare message id and no claim. `dispatched_at`
-// is the time of the last put on the queue: the cron sets it for a
-// scheduled email and the sweep sets it for each email. So the sweep does
-// not put an email back each minute.
-const STUCK_UNCLAIMED = `${PENDING_STATUS} AND cf_message_id IS NULL AND claimed_at IS NULL AND (
-  (status = 'queued' AND COALESCE(dispatched_at, created_at) < ?1)
-  OR (status = 'scheduled' AND dispatched_at IS NOT NULL AND dispatched_at < ?1))`;
+// A pending email with no Cloudflare message id that never reached
+// EMAIL.send: it has no claim, or an old claim with no send mark.
+// `dispatched_at` is the time of the last put on the queue: the cron sets
+// it for a scheduled email and the sweep sets it for each email. So the
+// sweep does not put an email back each minute.
+const STUCK_UNCLAIMED = `${PENDING_STATUS} AND cf_message_id IS NULL AND (
+  (claimed_at IS NULL AND (
+    (status = 'queued' AND COALESCE(dispatched_at, created_at) < ?1)
+    OR (status = 'scheduled' AND dispatched_at IS NOT NULL AND dispatched_at < ?1)))
+  OR (claimed_at < ?1 AND send_started_at IS NULL AND COALESCE(dispatched_at, 0) < ?1))`;
 
 export interface SweepResult {
   recorded: number;
@@ -287,15 +290,18 @@ export async function sweepStuck(
     "The sweep failed emails that stayed in the send queue.",
   );
 
-  // c. A consumer took the email and stopped. This can be during
+  // c. A consumer wrote the send mark and stopped. This can be during
   // EMAIL.send, so the email can be sent already. Never put it back on
-  // the queue: that can send it a second time.
+  // the queue: that can send it a second time. A claim with no mark never
+  // reached EMAIL.send. Case b handles it.
   const claimed = await env.DB.prepare(
     `UPDATE emails SET claimed_at = ?2 WHERE id IN (
        SELECT id FROM emails WHERE ${PENDING_STATUS} AND cf_message_id IS NULL
-         AND claimed_at IS NOT NULL AND claimed_at < ?1 LIMIT ${SWEEP_LIMIT}
+         AND claimed_at IS NOT NULL AND claimed_at < ?1
+         AND send_started_at IS NOT NULL LIMIT ${SWEEP_LIMIT}
      ) AND ${PENDING_STATUS} AND cf_message_id IS NULL
        AND claimed_at IS NOT NULL AND claimed_at < ?1
+       AND send_started_at IS NOT NULL
      RETURNING *`,
   )
     .bind(cutoff, now)

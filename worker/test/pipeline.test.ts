@@ -948,9 +948,32 @@ describe("stuck email sweep", () => {
     expect(queuedIds()).toContain(id);
   });
 
-  it("fails an old claim and never puts it back", async () => {
+  it("puts an old claim with no send mark back on the queue", async () => {
     const id = await queued();
-    await set(id, "claimed_at = ?", old());
+    await set(id, "claimed_at = ?, claim_token = 'dead'", old());
+    queueSpy.mockClear();
+
+    const result = await sweepStuck(env);
+
+    expect(result.uncertain).toBe(0);
+    expect(queuedIds()).toContain(id);
+    expect((await status(id))?.status).toBe("queued");
+
+    // The sweep marks the time, so the next minute does not repeat it.
+    queueSpy.mockClear();
+    await sweepStuck(env);
+    expect(queuedIds()).not.toContain(id);
+
+    // After 3 puts the sweep fails the email with the queue text.
+    await set(id, "sweep_count = 3, dispatched_at = ?", old());
+    expect((await sweepStuck(env)).failed).toBeGreaterThanOrEqual(1);
+    expect((await status(id))?.status).toBe("failed");
+    expect((await status(id))?.error).not.toContain("Check before you send");
+  });
+
+  it("fails an old claim with a send mark and never puts it back", async () => {
+    const id = await queued();
+    await set(id, "claimed_at = ?, send_started_at = ?", old(), old());
     queueSpy.mockClear();
 
     expect((await sweepStuck(env)).uncertain).toBeGreaterThanOrEqual(1);
