@@ -1046,12 +1046,16 @@ function passToCover(e: MouseEvent<HTMLElement>) {
 }
 
 // Relative time with the exact UTC time on hover and focus.
+// With `tipEnd`, the tooltip lines up with the right edge of the time. Use
+// it for a time at the right edge of a narrow screen.
 export function RelTime({
   at,
   className,
+  tipEnd,
 }: {
   at: string | null | undefined;
   className?: string;
+  tipEnd?: boolean;
 }) {
   const now = useNow();
 
@@ -1073,7 +1077,10 @@ export function RelTime({
       {relative(at, now)}
       <span
         role="tooltip"
-        className="pointer-events-none invisible absolute bottom-full left-0 z-30 mb-1.5 translate-y-0.5 bg-fg px-2 py-1 text-[12.5px] whitespace-nowrap text-bg no-underline opacity-0 transition-[opacity,translate,visibility] duration-150 ease-out group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-hover:delay-200 group-focus:visible group-focus:translate-y-0 group-focus:opacity-100"
+        className={cx(
+          "pointer-events-none invisible absolute bottom-full z-30 mb-1.5 translate-y-0.5 bg-fg px-2 py-1 text-[12.5px] whitespace-nowrap text-bg no-underline opacity-0 transition-[opacity,translate,visibility] duration-150 ease-out group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-hover:delay-200 group-focus:visible group-focus:translate-y-0 group-focus:opacity-100",
+          tipEnd ? "right-0" : "left-0",
+        )}
       >
         {exact}
       </span>

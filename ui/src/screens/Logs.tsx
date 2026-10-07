@@ -267,7 +267,7 @@ function LogRow({
             {r.method}
           </span>
           <StatusBadge status={r.status} />
-          <RelTime at={r.created_at} className="ml-auto text-fg3" />
+          <RelTime at={r.created_at} className="ml-auto text-fg3" tipEnd />
         </span>
         <span className="font-mono text-[12.5px] [overflow-wrap:anywhere]">
           {r.path}

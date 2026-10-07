@@ -744,7 +744,11 @@ function AllTable({ rows, narrow }: { rows: Email[]; narrow: boolean }) {
                 <span className="min-w-0 text-fg2">
                   <Recipients e={e} />
                 </span>
-                <RelTime at={e.last_event_at} className="flex-none text-fg3" />
+                <RelTime
+                  at={e.last_event_at}
+                  className="flex-none text-fg3"
+                  tipEnd
+                />
               </span>
               <span className="text-[15px] font-medium">{e.subject}</span>
               {reason && (
