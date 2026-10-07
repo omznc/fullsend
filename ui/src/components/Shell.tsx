@@ -37,6 +37,17 @@ function current(path: string): string {
   return hit.at(-1)?.href ?? "";
 }
 
+// Scrolls a row so that the item is inside it. The page does not scroll.
+function showInRow(row: HTMLElement, item: HTMLElement) {
+  const gap = 8;
+  const left = item.offsetLeft - gap;
+  const right = item.offsetLeft + item.offsetWidth + gap;
+
+  if (left < row.scrollLeft) row.scrollLeft = left;
+  else if (right > row.scrollLeft + row.clientWidth)
+    row.scrollLeft = right - row.clientWidth;
+}
+
 // The top bar and the nav. Below 768 px the nav collapses to a menu.
 export function Shell({ children }: { children: ReactNode }) {
   const { session } = useSession();
@@ -51,6 +62,23 @@ export function Shell({ children }: { children: ReactNode }) {
   const active = current(path);
   const base = apiBase(session);
   const navRef = useIndicator<HTMLElement>();
+
+  // The top nav scrolls when the items do not fit. Show the current item.
+  // The icon font changes the widths, so do it again when the fonts load.
+  useEffect(() => {
+    const nav = navRef.current;
+
+    if (narrow || !nav) return;
+
+    const show = () => {
+      const item = nav.querySelector<HTMLElement>(`[data-nav="${active}"]`);
+
+      if (item) showInRow(nav, item);
+    };
+
+    show();
+    void document.fonts.ready.then(show);
+  }, [active, narrow, navRef]);
 
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
@@ -219,6 +247,7 @@ export function Shell({ children }: { children: ReactNode }) {
               <Link
                 key={n.href}
                 href={n.href}
+                data-nav={n.href}
                 aria-current={n.href === active ? "page" : undefined}
                 className={cx(
                   "flex shrink-0 items-center gap-1.5 px-3 no-underline hover:text-fg",
