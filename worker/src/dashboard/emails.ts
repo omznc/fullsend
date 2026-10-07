@@ -358,6 +358,8 @@ emailRoutes.get("/:id/attachments/:index", async (c) => {
     headers: {
       "Content-Type": a.content_type,
       "Content-Disposition": `attachment; filename="${a.filename.replace(/"/g, "")}"`,
+      "Content-Security-Policy": "sandbox",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 });
