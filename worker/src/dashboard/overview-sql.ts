@@ -4,6 +4,9 @@
 
 const IGNORED = `email_id NOT IN (SELECT id FROM emails WHERE ignored_at IS NOT NULL)`;
 
+// The time of the first email. The index `emails_created` answers it.
+export const FIRST_EMAIL_SQL = "SELECT MIN(created_at) AS t FROM emails";
+
 // The count of emails for each event type in a time range. Binds: from, to.
 export const COUNTS_SQL = `SELECT type, COUNT(DISTINCT email_id) AS n FROM email_events
   WHERE created_at >= ? AND created_at < ? AND bot IS NULL

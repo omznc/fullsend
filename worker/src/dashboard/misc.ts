@@ -35,7 +35,7 @@ import {
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
 import { dashDomain } from "./domains";
 import { FAILURES_SQL } from "./failures-sql";
-import { COUNTS_SQL, SERIES_SQL } from "./overview-sql";
+import { COUNTS_SQL, FIRST_EMAIL_SQL, SERIES_SQL } from "./overview-sql";
 import { cookieOpts, MIN_PASSWORD } from "./setup";
 
 export const miscRoutes = new Hono<DashVars>();
@@ -116,9 +116,9 @@ async function resolvePeriod(
   now: number,
 ): Promise<{ name: string; all: boolean; period: Period }> {
   if (asked === "all") {
-    const first = await env.DB.prepare(
-      "SELECT MIN(created_at) AS t FROM emails",
-    ).first<{ t: number | null }>();
+    const first = await env.DB.prepare(FIRST_EMAIL_SQL).first<{
+      t: number | null;
+    }>();
 
     return { name: asked, all: true, period: allTime(first?.t ?? null, now) };
   }

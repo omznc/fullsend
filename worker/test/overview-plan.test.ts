@@ -1,7 +1,11 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { FAILURES_SQL } from "../src/dashboard/failures-sql";
-import { COUNTS_SQL, SERIES_SQL } from "../src/dashboard/overview-sql";
+import {
+  COUNTS_SQL,
+  FIRST_EMAIL_SQL,
+  SERIES_SQL,
+} from "../src/dashboard/overview-sql";
 
 async function plan(sql: string, ...binds: number[]): Promise<string> {
   const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
@@ -32,9 +36,7 @@ describe("overview query plans", () => {
   });
 
   it("reads the first email from the created index", async () => {
-    expect(await plan("SELECT MIN(created_at) AS t FROM emails")).toContain(
-      "emails_created",
-    );
+    expect(await plan(FIRST_EMAIL_SQL)).toContain("emails_created");
   });
 
   it("returns the newest failures first", async () => {
