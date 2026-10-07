@@ -68,7 +68,10 @@ in Settings and in `GET /health`.
   of the "fullsend API" Access application in a deploy that has Access.
   An Access deploy must run it (or press the button in Settings) after
   the update. Without it, `/suppressions` and `/logs` show the Access
-  login page.
+  login page. A manual Access setup has no button and the route returns 404. In that case, add the `/suppressions` and `/logs` destinations
+  (each path and its `/*` subpath) to the Access bypass application by
+  hand. Do the same for each public path of `PUBLIC_PATHS` that a later
+  version adds.
 - `GET /api/settings` returns `version` and `access.paths_current`.
 - Settings shows the version.
 - Add ignored emails. The owner can ignore a bounced, failed or complained

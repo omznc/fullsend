@@ -107,6 +107,13 @@ update. Press the sync button in Settings, or send
 `POST /api/settings/access/sync-paths`. Without the sync, Access shows the
 login page on `/suppressions` and `/logs`.
 
+If you made the Access applications by hand, Settings has no sync button
+and the sync route returns 404. Add the destinations by hand to the Access
+application that bypasses the API. Add `/suppressions`, `/suppressions/*`,
+`/logs` and `/logs/*` on the API hostname. Do the same for each public
+path that a later version adds. `PUBLIC_PATHS` in
+`worker/src/public-paths.ts` lists them all.
+
 </details>
 
 ---
@@ -326,7 +333,8 @@ exist stay until the retention job deletes them.
 > A deploy that has Cloudflare Access must add each new public path to the
 > "fullsend API" Access application. After an update, send
 > `POST /api/settings/access/sync-paths` from the dashboard session. The
-> setup does the same when it reuses the application.
+> setup does the same when it reuses the application. In a manual Access
+> setup, add the new paths to the bypass application by hand.
 
 ---
 
