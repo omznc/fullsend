@@ -80,6 +80,15 @@ describe("openapi.json", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("documents the rate unit and the domain capabilities", () => {
+    const metrics = spec.paths["/emails/metrics"].get;
+    const create = spec.paths["/domains"].post;
+    const body = create.requestBody.content["application/json"].schema;
+
+    expect(metrics.description).toContain("percent");
+    expect(Object.keys(body.properties)).toContain("capabilities");
+  });
+
   it("has the version of the package", () => {
     expect(spec.openapi).toBe("3.1.0");
     expect(spec.info.version).toBe(pkg.version);

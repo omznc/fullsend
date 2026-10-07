@@ -496,7 +496,7 @@
         "tags": ["Emails"],
         "operationId": "getEmailMetrics",
         "summary": "Get email metrics",
-        "description": "Counts the email events in UTC. A rate is a fraction from 0 to 1.",
+        "description": "Counts the email events in UTC. A rate is a percent from 0 to 100, with one decimal.",
         "parameters": [
           {
             "name": "start_date",
@@ -537,7 +537,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "A comma separated list of `period`, `domain` and `email`."
+            "description": "A comma separated list or a repeated parameter. Allowed: `period`, `domain` and `email`."
           },
           {
             "name": "metrics",
@@ -545,7 +545,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "A comma separated list. Allowed: sent, delivered, complained, suppressed, bounced, bounced_transient, bounced_permanent, bounced_undetermined, opened, clicked, delivery_delayed, failed, unique_opened, unique_clicked, delivery_rate, open_rate, click_rate, bounce_rate, complaint_rate."
+            "description": "A comma separated list or a repeated parameter. Allowed: sent, delivered, complained, suppressed, bounced, bounced_transient, bounced_permanent, bounced_undetermined, opened, clicked, delivery_delayed, failed, unique_opened, unique_clicked, delivery_rate, open_rate, click_rate, bounce_rate, complaint_rate."
           },
           {
             "name": "domain_id",
@@ -553,7 +553,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "A comma separated list of domain ids."
+            "description": "A comma separated list or a repeated parameter of domain ids."
           },
           {
             "name": "email_id",
@@ -561,7 +561,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "A comma separated list of email ids."
+            "description": "A comma separated list or a repeated parameter of email ids."
           }
         ],
         "responses": {
@@ -970,6 +970,20 @@
                   "custom_return_path": {
                     "type": "string",
                     "description": "Cloudflare sets the return path. fullsend refuses another value."
+                  },
+                  "capabilities": {
+                    "type": "object",
+                    "properties": {
+                      "sending": {
+                        "type": "string",
+                        "enum": ["enabled"]
+                      },
+                      "receiving": {
+                        "type": "string",
+                        "enum": ["disabled"]
+                      }
+                    },
+                    "description": "fullsend always sends and never receives. It refuses another value."
                   }
                 },
                 "required": ["name"]
