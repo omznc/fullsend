@@ -65,6 +65,11 @@ in Settings and in `GET /health`.
   of the "fullsend API" Access application in a deploy that has Access.
 - `GET /api/settings` returns `version` and `access.paths_current`.
 - Settings shows the version.
+- Add ignored emails. The owner can ignore a bounced, failed or complained
+  email in the email detail page. An ignored email does not count in the
+  overview, in the recent failures or in `GET /emails/metrics`. Use
+  `POST /api/emails/:id/ignore`, `DELETE /api/emails/:id/ignore` and
+  `POST /api/emails/ignore`. This needs migration `0003_ignored_emails`.
 
 ### Documentation
 

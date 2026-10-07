@@ -183,6 +183,7 @@ export interface EmailDbRow {
   body_key: string | null;
   size: number;
   sweep_count: number;
+  ignored_at: number | null;
   created_at: number;
   sent_at: number | null;
 }
@@ -238,6 +239,7 @@ export function rowToEmail(r: EmailDbRow): EmailRow {
     bodyKey: r.body_key ?? null,
     size: r.size,
     sweepCount: r.sweep_count,
+    ignoredAt: r.ignored_at ?? null,
     createdAt: r.created_at,
     sentAt: r.sent_at ?? null,
   };

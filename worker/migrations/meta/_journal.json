@@ -22,6 +22,13 @@
       "when": 1791050609459,
       "tag": "0002_improvements",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791403045493,
+      "tag": "0003_ignored_emails",
+      "breakpoints": true
     }
   ]
 }

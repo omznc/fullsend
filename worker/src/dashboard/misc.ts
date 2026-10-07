@@ -85,6 +85,7 @@ async function counts(
     `SELECT type, COUNT(DISTINCT email_id) AS n FROM email_events
      WHERE created_at >= ? AND created_at < ? AND bot IS NULL
        AND type IN ('sent','delivered','bounced','complained','opened','clicked')
+       AND email_id NOT IN (SELECT id FROM emails WHERE ignored_at IS NOT NULL)
      GROUP BY type`,
   )
     .bind(from, to)
@@ -139,6 +140,7 @@ miscRoutes.get("/overview", async (c) => {
       c.env.DB.prepare(
         `SELECT (created_at / ?1) * ?1 AS bucket, type, COUNT(DISTINCT email_id) AS n FROM email_events
        WHERE created_at >= ?2 AND bot IS NULL AND type IN ('sent','delivered','bounced')
+         AND email_id NOT IN (SELECT id FROM emails WHERE ignored_at IS NOT NULL)
        GROUP BY bucket, type ORDER BY bucket`,
       )
         .bind(period.bucket, since)

@@ -191,13 +191,19 @@ export async function emailMetrics(
 
   const domainIds = list(query.domain_id);
   const emailIds = list(query.email_id);
-  const needsEmails = domainIds.length > 0 || dimensions.includes("domain");
 
-  const from = `FROM email_events ev ${needsEmails ? "JOIN emails e ON e.id = ev.email_id" : ""}
+  // An ignored email does not count, so the query always joins emails.
+  const from = `FROM email_events ev JOIN emails e ON e.id = ev.email_id
     ${dimensions.includes("domain") ? "LEFT JOIN domains d ON d.id = e.domain_id" : ""}`;
 
   // A flagged open or click came from a bot. The email does not count it.
-  const where = ["ev.created_at >= ?", "ev.created_at < ?", "ev.bot IS NULL"];
+  const where = [
+    "ev.created_at >= ?",
+    "ev.created_at < ?",
+    "ev.bot IS NULL",
+    "e.ignored_at IS NULL",
+  ];
+
   const binds: (string | number)[] = [start, end];
 
   if (domainIds.length) {

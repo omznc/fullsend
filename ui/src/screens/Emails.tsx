@@ -758,6 +758,7 @@ function AllTable({ rows, narrow }: { rows: Email[]; narrow: boolean }) {
               )}
               <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
                 <Badge status={e.status} />
+                {e.ignored_at && <Badge status="ignored" hollow />}
                 <Tags tags={e.tags} />
                 <span className="font-mono text-[12px] text-fg3">
                   {e.api_key.name}
@@ -778,8 +779,9 @@ function AllTable({ rows, narrow }: { rows: Email[]; narrow: boolean }) {
               <span className="truncate">{e.subject}</span>
               {line}
             </span>
-            <span>
+            <span className="flex flex-wrap items-center gap-1">
               <Badge status={e.status} />
+              {e.ignored_at && <Badge status="ignored" hollow />}
             </span>
             <RelTime at={e.last_event_at} className="text-fg2" />
             <span className="flex flex-wrap gap-1">

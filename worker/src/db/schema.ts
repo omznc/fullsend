@@ -132,6 +132,9 @@ export const emails = sqliteTable(
     size: integer("size").notNull().default(0),
     // How often the cron sweep put the stuck email on the send queue again.
     sweepCount: integer("sweep_count").notNull().default(0),
+    // Set when the owner ignores a failed, bounced or complained email.
+    // An ignored email does not count in the stats.
+    ignoredAt: integer("ignored_at"),
     createdAt: integer("created_at").notNull(),
     sentAt: integer("sent_at"),
   },

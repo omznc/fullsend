@@ -133,6 +133,7 @@ export interface Email {
   reply_to: string[] | null;
   subject: string;
   status: EmailStatus;
+  ignored_at: string | null;
   last_event: string;
   last_event_at: string;
   error: string | null;

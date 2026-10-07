@@ -1,0 +1,1 @@
+ALTER TABLE `emails` ADD `ignored_at` integer;

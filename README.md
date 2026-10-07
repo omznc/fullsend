@@ -287,6 +287,14 @@ These routes need a full access key. They read the request log (see below).
 | Webhook events     | Each type is accepted. fullsend does not send contact, topic or receiving events. |
 | Event attempts     | An attempt with no response has `http_status_code` 0.                             |
 
+#### Ignored emails
+
+People test with bad addresses, and the bounces stay in the stats. In the
+dashboard, open a bounced, failed or complained email and select "ignore".
+An ignored email does not count in the overview, in the recent failures or
+in `GET /emails/metrics`. The email stays in the Emails list with an
+"ignored" mark. Select "stop ignoring" to count it again.
+
 #### Request log
 
 fullsend writes one log row for each request to a Resend API route. The

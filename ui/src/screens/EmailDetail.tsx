@@ -532,6 +532,7 @@ function Loaded({
   const [picker, setPicker] = useState(false);
   const pickerShown = usePresence(picker);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [ignoring, setIgnoring] = useState(false);
 
   const scheduled = email.status === "scheduled";
   const bodyDeleted = !email.body_available && email.status !== "suppressed";
@@ -569,6 +570,26 @@ function Loaded({
       toast({ tone: "error", message: errorText(err) });
     } finally {
       setAgain(false);
+    }
+  };
+
+  const canIgnore =
+    Boolean(email.ignored_at) ||
+    ["bounced", "failed", "complained"].includes(email.status);
+
+  const toggleIgnore = async () => {
+    setIgnoring(true);
+
+    try {
+      await api(`/emails/${email.id}/ignore`, {
+        method: email.ignored_at ? "DELETE" : "POST",
+      });
+
+      await reload();
+    } catch (err) {
+      toast({ tone: "error", message: errorText(err) });
+    } finally {
+      setIgnoring(false);
     }
   };
 
@@ -625,6 +646,7 @@ function Loaded({
               {email.subject}
             </h1>
             <Badge status={email.status} />
+            {email.ignored_at && <Badge status="ignored" hollow />}
           </div>
           <div className="flex flex-wrap items-center gap-x-[18px] gap-y-1 font-mono text-[12px] text-fg2">
             <span className="flex items-center [overflow-wrap:anywhere]">
@@ -723,7 +745,22 @@ function Loaded({
               >
                 send again
               </Button>
+              {canIgnore && (
+                <Button
+                  icon={email.ignored_at ? "eye" : "eye-closed"}
+                  className={actionClass}
+                  busy={ignoring}
+                  onClick={() => void toggleIgnore()}
+                >
+                  {email.ignored_at ? "stop ignoring" : "ignore"}
+                </Button>
+              )}
             </>
+          )}
+          {!scheduled && canIgnore && (
+            <p className="m-0 basis-full text-[12px] text-fg3">
+              Ignored emails do not count in the stats.
+            </p>
           )}
         </div>
       </div>

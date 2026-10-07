@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { z } from "zod";
 import type { EmailRow } from "../events/record";
 import { csvResponse, EXPORT_CHUNK, MAX_EXPORT_ROWS } from "../lib/csv";
 import { notFound, validation } from "../lib/errors";
@@ -59,6 +60,7 @@ export function dashEmail(e: EmailRow, names: Map<string, string>) {
     reply_to: e.replyTo,
     subject: e.subject,
     status: e.status,
+    ignored_at: isoOrNull(e.ignoredAt),
     last_event: e.lastEvent,
     last_event_at: iso(e.lastEventAt),
     error: e.error,
@@ -186,6 +188,94 @@ emailRoutes.post("/", async (c) => {
   });
 
   return c.json(result);
+});
+
+// Only these statuses can be ignored. An ignored email does not count in
+// the stats.
+const IGNORABLE = ["bounced", "failed", "complained"];
+
+const IGNORABLE_LIST = IGNORABLE.map((s) => `'${s}'`).join(",");
+
+const ignoreBody = z.object({ ids: z.array(z.string()).min(1).max(100) });
+
+// Ignores many emails in one call. It skips an email that is not bounced,
+// failed or complained, and an email that is ignored already.
+emailRoutes.post("/ignore", async (c) => {
+  const parsed = ignoreBody.safeParse(await readJson(c));
+
+  if (!parsed.success) {
+    return c.json(
+      {
+        error: "validation_error",
+        message: "Send `ids` as a list of 1 to 100 email ids.",
+      },
+      422,
+    );
+  }
+
+  const res = await c.env.DB.prepare(
+    `UPDATE emails SET ignored_at = ?
+     WHERE id IN (SELECT value FROM json_each(?)) AND ignored_at IS NULL
+       AND status IN (${IGNORABLE_LIST})`,
+  )
+    .bind(Date.now(), JSON.stringify(parsed.data.ids))
+    .run();
+
+  return c.json({ ok: true, ignored: res.meta.changes });
+});
+
+// The status of an email, or null when the email does not exist.
+async function statusOf(
+  env: DashVars["Bindings"],
+  id: string,
+): Promise<string | null> {
+  const row = await env.DB.prepare("SELECT status FROM emails WHERE id = ?")
+    .bind(id)
+    .first<{ status: string }>();
+
+  return row?.status ?? null;
+}
+
+emailRoutes.post("/:id/ignore", async (c) => {
+  const id = c.req.param("id");
+  const status = await statusOf(c.env, id);
+
+  if (status === null) {
+    return c.json({ error: "not_found", message: "Email not found" }, 404);
+  }
+
+  if (!IGNORABLE.includes(status)) {
+    return c.json(
+      {
+        error: "not_ignorable",
+        message: "Only a bounced, failed or complained email can be ignored.",
+      },
+      422,
+    );
+  }
+
+  // An email that is ignored already keeps its first time.
+  await c.env.DB.prepare(
+    "UPDATE emails SET ignored_at = ? WHERE id = ? AND ignored_at IS NULL",
+  )
+    .bind(Date.now(), id)
+    .run();
+
+  return c.json({ ok: true });
+});
+
+emailRoutes.delete("/:id/ignore", async (c) => {
+  const id = c.req.param("id");
+
+  if ((await statusOf(c.env, id)) === null) {
+    return c.json({ error: "not_found", message: "Email not found" }, 404);
+  }
+
+  await c.env.DB.prepare("UPDATE emails SET ignored_at = NULL WHERE id = ?")
+    .bind(id)
+    .run();
+
+  return c.json({ ok: true });
 });
 
 emailRoutes.get("/:id", async (c) => {
