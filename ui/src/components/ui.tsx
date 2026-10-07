@@ -2011,6 +2011,8 @@ export function TableRow({
   template,
   href,
   onOpen,
+  expanded,
+  controls,
   children,
   danger,
   muted,
@@ -2019,6 +2021,10 @@ export function TableRow({
   template: string;
   href?: string;
   onOpen?: () => void;
+  // For a row that opens a panel in place: the state, and the id of the
+  // panel. Give the id only while the panel is in the page.
+  expanded?: boolean;
+  controls?: string;
   children: ReactNode;
   danger?: boolean;
   muted?: boolean;
@@ -2049,6 +2055,8 @@ export function TableRow({
         <button
           type="button"
           aria-labelledby={id}
+          aria-expanded={expanded}
+          aria-controls={controls}
           onClick={onOpen}
           className={cover}
         />

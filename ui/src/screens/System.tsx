@@ -127,43 +127,14 @@ export function System() {
             template={COLS}
             columns={["level", "source", "message", "when", ""]}
           />
-          {rows.map((e) => {
-            const shown = open === e.id;
-            const hasDetail = e.detail !== null;
-
-            return (
-              <div key={e.id}>
-                <TableRow
-                  template={COLS}
-                  onOpen={
-                    hasDetail ? () => setOpen(shown ? null : e.id) : undefined
-                  }
-                >
-                  <span>
-                    <Badge status={e.level} tone={tone(e.level)} />
-                  </span>
-                  <span className="font-mono text-[12.5px] text-fg2">
-                    {e.source}
-                  </span>
-                  <span className="[overflow-wrap:anywhere]">{e.message}</span>
-                  <RelTime at={e.created_at} className="text-fg2" />
-                  <span className="flex text-fg3 md:justify-end">
-                    {hasDetail && (
-                      <Icon
-                        name={shown ? "chevron-down" : "chevron-right"}
-                        size={16}
-                      />
-                    )}
-                  </span>
-                </TableRow>
-                {shown && hasDetail && (
-                  <pre className="fs-fade m-0 overflow-x-auto border-b border-line bg-panel px-4 py-3 font-mono text-[12.5px] leading-5 md:px-8">
-                    {JSON.stringify(e.detail, null, 2)}
-                  </pre>
-                )}
-              </div>
-            );
-          })}
+          {rows.map((e) => (
+            <EventRow
+              key={e.id}
+              e={e}
+              shown={open === e.id}
+              onToggle={() => setOpen(open === e.id ? null : e.id)}
+            />
+          ))}
         </div>
       )}
       {moreError && (
@@ -187,5 +158,50 @@ export function System() {
         onConfirm={clear}
       />
     </>
+  );
+}
+
+// One event. A row with detail opens its JSON in place.
+function EventRow({
+  e,
+  shown,
+  onToggle,
+}: {
+  e: SystemEvent;
+  shown: boolean;
+  onToggle: () => void;
+}) {
+  const hasDetail = e.detail !== null;
+  const panel = `system-detail-${e.id}`;
+
+  return (
+    <div>
+      <TableRow
+        template={COLS}
+        expanded={hasDetail ? shown : undefined}
+        controls={shown && hasDetail ? panel : undefined}
+        onOpen={hasDetail ? onToggle : undefined}
+      >
+        <span>
+          <Badge status={e.level} tone={tone(e.level)} />
+        </span>
+        <span className="font-mono text-[12.5px] text-fg2">{e.source}</span>
+        <span className="[overflow-wrap:anywhere]">{e.message}</span>
+        <RelTime at={e.created_at} className="text-fg2" />
+        <span className="flex text-fg3 md:justify-end">
+          {hasDetail && (
+            <Icon name={shown ? "chevron-down" : "chevron-right"} size={16} />
+          )}
+        </span>
+      </TableRow>
+      {shown && hasDetail && (
+        <pre
+          id={panel}
+          className="fs-fade m-0 overflow-x-auto border-b border-line bg-panel px-4 py-3 font-mono text-[12.5px] leading-5 md:px-8"
+        >
+          {JSON.stringify(e.detail, null, 2)}
+        </pre>
+      )}
+    </div>
   );
 }
