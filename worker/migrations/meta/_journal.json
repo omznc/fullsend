@@ -36,6 +36,13 @@
       "when": 1791406365901,
       "tag": "0004_webhook_replays",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791406549462,
+      "tag": "0005_request_log_indexes",
+      "breakpoints": true
     }
   ]
 }

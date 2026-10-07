@@ -296,6 +296,9 @@ export const apiRequests = sqliteTable(
   (t) => [
     index("api_requests_created").on(t.createdAt),
     index("api_requests_status").on(t.status, t.createdAt),
+    // The status class filter (4xx) reads in the order of the list.
+    index("api_requests_class").on(sql`(${t.status} / 100)`, t.createdAt),
+    index("api_requests_key").on(t.apiKeyId, t.createdAt),
   ],
 );
 

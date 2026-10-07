@@ -28,17 +28,18 @@ const badParameter = (message: string) => ({
   message,
 });
 
+// The WHERE part of the `status` filter. A class such as "4xx" tests
+// status / 100, which the api_requests_class index holds, so the list reads
+// in index order.
+export const STATUS_CLASS_SQL = "status / 100 = ?";
+
 // The `status` filter: a class such as "4xx", or one exact status.
 function statusCondition(
   value: string,
 ): { sql: string; params: number[] } | null {
   const range = /^([1-5])xx$/.exec(value);
 
-  if (range) {
-    const low = Number(range[1]) * 100;
-
-    return { sql: "status >= ? AND status < ?", params: [low, low + 100] };
-  }
+  if (range) return { sql: STATUS_CLASS_SQL, params: [Number(range[1])] };
 
   if (/^[1-5]\d\d$/.test(value)) {
     return { sql: "status = ?", params: [Number(value)] };
