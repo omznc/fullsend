@@ -625,8 +625,9 @@ function Content({ data, reload }: { data: SettingsData; reload: Reload }) {
           <span className="flex flex-col">
             <span className="font-semibold">Delete all emails and events</span>
             <span className="text-[13px] text-fg2">
-              Keeps domains, keys and webhooks. Suppressions are deleted. You
-              confirm by typing “delete all data”.
+              Keeps domains, keys and webhooks. Suppressions, the request log
+              and the system events are deleted. You confirm by typing “delete
+              all data”.
             </span>
           </span>
           <Button

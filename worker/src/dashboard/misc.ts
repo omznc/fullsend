@@ -828,8 +828,8 @@ miscRoutes.post("/settings/password", async (c) => {
   return c.json({ ok: true });
 });
 
-// Deletes every email, event, delivery and suppression. Keys, domains,
-// webhooks and settings stay.
+// Deletes every email, event, delivery, suppression, request log row and
+// system event. Keys, domains, webhooks and settings stay.
 miscRoutes.post("/settings/purge", async (c) => {
   const body = asRecord(await readJson(c));
 
@@ -856,6 +856,8 @@ miscRoutes.post("/settings/purge", async (c) => {
       "webhook_deliveries",
       "idempotency_keys",
       "suppressions",
+      "api_requests",
+      "system_events",
     ].map((t) => c.env.DB.prepare(`DELETE FROM ${t}`)),
   );
 
