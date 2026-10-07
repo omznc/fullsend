@@ -35,6 +35,7 @@ import {
 import { type DashVars, SESSION_COOKIE, SESSION_TTL, signToken } from "./auth";
 import { dashDomain } from "./domains";
 import { FAILURES_SQL } from "./failures-sql";
+import { COUNTS_SQL, SERIES_SQL } from "./overview-sql";
 import { cookieOpts, MIN_PASSWORD } from "./setup";
 
 export const miscRoutes = new Hono<DashVars>();
@@ -81,13 +82,7 @@ async function counts(
   from: number,
   to: number,
 ): Promise<Record<string, number>> {
-  const { results } = await env.DB.prepare(
-    `SELECT type, COUNT(DISTINCT email_id) AS n FROM email_events
-     WHERE created_at >= ? AND created_at < ? AND bot IS NULL
-       AND type IN ('sent','delivered','bounced','complained','opened','clicked')
-       AND email_id NOT IN (SELECT id FROM emails WHERE ignored_at IS NOT NULL)
-     GROUP BY type`,
-  )
+  const { results } = await env.DB.prepare(COUNTS_SQL)
     .bind(from, to)
     .all<{ type: string; n: number }>();
 
@@ -114,21 +109,57 @@ function level(
   return "good";
 }
 
+// The period of the overview. "all" starts at the first email.
+async function resolvePeriod(
+  env: DashVars["Bindings"],
+  asked: string,
+  now: number,
+): Promise<{ name: string; all: boolean; period: Period }> {
+  if (asked === "all") {
+    const first = await env.DB.prepare(
+      "SELECT MIN(created_at) AS t FROM emails",
+    ).first<{ t: number | null }>();
+
+    return { name: asked, all: true, period: allTime(first?.t ?? null, now) };
+  }
+
+  const name = PERIODS.has(asked) ? asked : "7d";
+
+  return { name, all: false, period: PERIODS.get(name) ?? WEEK };
+}
+
+// The chart points: one point for each bucket, with 0 for no events.
+function buildSeries(
+  rows: { bucket: number; type: string; n: number }[],
+  since: number,
+  now: number,
+  bucket: number,
+) {
+  const buckets = new Map<number, Record<string, number>>();
+
+  for (let t = Math.floor(since / bucket) * bucket; t <= now; t += bucket)
+    buckets.set(t, { sent: 0, delivered: 0, bounced: 0 });
+
+  for (const r of rows) {
+    const b = buckets.get(r.bucket);
+
+    if (b) b[r.type] = r.n;
+  }
+
+  return [...buckets].map(([t, v]) => ({ at: iso(t), ...v }));
+}
+
+const rate = (part: number | undefined, base: number | undefined) =>
+  base ? (part ?? 0) / base : null;
+
 miscRoutes.get("/overview", async (c) => {
-  const asked = c.req.query("period") ?? "7d";
-  const all = asked === "all";
-  const name = all || PERIODS.has(asked) ? asked : "7d";
   const now = Date.now();
 
-  const first = all
-    ? await c.env.DB.prepare("SELECT MIN(created_at) AS t FROM emails").first<{
-        t: number | null;
-      }>()
-    : null;
-
-  const period = all
-    ? allTime(first?.t ?? null, now)
-    : (PERIODS.get(name) ?? WEEK);
+  const { name, all, period } = await resolvePeriod(
+    c.env,
+    c.req.query("period") ?? "7d",
+    now,
+  );
 
   const since = now - period.span;
 
@@ -137,12 +168,7 @@ miscRoutes.get("/overview", async (c) => {
       counts(c.env, since, now),
       // "all" has no period before it.
       all ? null : counts(c.env, since - period.span, since),
-      c.env.DB.prepare(
-        `SELECT (created_at / ?1) * ?1 AS bucket, type, COUNT(DISTINCT email_id) AS n FROM email_events
-       WHERE created_at >= ?2 AND bot IS NULL AND type IN ('sent','delivered','bounced')
-         AND email_id NOT IN (SELECT id FROM emails WHERE ignored_at IS NOT NULL)
-       GROUP BY bucket, type ORDER BY bucket`,
-      )
+      c.env.DB.prepare(SERIES_SQL)
         .bind(period.bucket, since)
         .all<{ bucket: number; type: string; n: number }>(),
       c.env.DB.prepare(FAILURES_SQL).all<{
@@ -169,23 +195,8 @@ miscRoutes.get("/overview", async (c) => {
         .first<{ errors: number; warnings: number; latest: number | null }>(),
     ]);
 
-  const buckets = new Map<number, Record<string, number>>();
-  const start = Math.floor(since / period.bucket) * period.bucket;
-
-  for (let t = start; t <= now; t += period.bucket)
-    buckets.set(t, { sent: 0, delivered: 0, bounced: 0 });
-
-  for (const r of series.results) {
-    const b = buckets.get(r.bucket);
-
-    if (b) b[r.type] = r.n;
-  }
-
-  const bounceRate = current.sent ? current.bounced! / current.sent : null;
-
-  const complaintRate = current.delivered
-    ? current.complained! / current.delivered
-    : null;
+  const bounceRate = rate(current.bounced, current.sent);
+  const complaintRate = rate(current.complained, current.delivered);
 
   return c.json({
     period: name,
@@ -195,7 +206,7 @@ miscRoutes.get("/overview", async (c) => {
       value: current[t],
       previous: previous ? previous[t] : null,
     })),
-    series: [...buckets].map(([t, v]) => ({ at: iso(t), ...v })),
+    series: buildSeries(series.results, since, now, period.bucket),
     bounce_rate: { value: bounceRate, level: level(bounceRate, 0.02, 0.04) },
     complaint_rate: {
       value: complaintRate,

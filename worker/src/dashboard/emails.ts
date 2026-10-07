@@ -238,6 +238,20 @@ async function statusOf(
 
 emailRoutes.post("/:id/ignore", async (c) => {
   const id = c.req.param("id");
+
+  // The status check is in the UPDATE. A status change between a read and
+  // the write cannot ignore an email that is not ignorable. An email that
+  // is ignored already keeps its first time.
+  const res = await c.env.DB.prepare(
+    `UPDATE emails SET ignored_at = ?
+     WHERE id = ? AND ignored_at IS NULL AND status IN (${IGNORABLE_LIST})`,
+  )
+    .bind(Date.now(), id)
+    .run();
+
+  if (res.meta.changes > 0) return c.json({ ok: true });
+
+  // Nothing changed. Find the reason.
   const status = await statusOf(c.env, id);
 
   if (status === null) {
@@ -253,13 +267,6 @@ emailRoutes.post("/:id/ignore", async (c) => {
       422,
     );
   }
-
-  // An email that is ignored already keeps its first time.
-  await c.env.DB.prepare(
-    "UPDATE emails SET ignored_at = ? WHERE id = ? AND ignored_at IS NULL",
-  )
-    .bind(Date.now(), id)
-    .run();
 
   return c.json({ ok: true });
 });

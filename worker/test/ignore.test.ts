@@ -5,6 +5,7 @@ import { call, dashSession, newKey } from "./helpers";
 interface Overview {
   stats: { type: string; value: number }[];
   recent_failures: { id: string }[];
+  series: { sent: number; bounced: number }[];
 }
 
 interface Totals {
@@ -56,6 +57,9 @@ describe("ignored emails", () => {
       })
     ).json<Totals>();
 
+  const seriesBounced = (o: Overview) =>
+    o.series.reduce((sum, p) => sum + p.bounced, 0);
+
   const bounced = (o: Overview) =>
     o.stats.find((s) => s.type === "bounced")?.value;
 
@@ -105,6 +109,8 @@ describe("ignored emails", () => {
     await post("/emails/ig-bounced/ignore");
 
     const after = await overview();
+
+    expect(seriesBounced(after)).toBe(seriesBounced(before) - 1);
 
     expect(bounced(after)).toBe((bounced(before) ?? 0) - 1);
     expect(after.recent_failures.map((f) => f.id)).not.toContain("ig-bounced");

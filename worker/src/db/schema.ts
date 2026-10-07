@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -143,6 +144,10 @@ export const emails = sqliteTable(
     index("emails_status").on(t.status, t.createdAt),
     index("emails_scheduled").on(t.status, t.scheduledAt),
     index("emails_status_event").on(t.status, t.lastEventAt),
+    // The stats skip an ignored email. The index holds only those rows.
+    index("emails_ignored")
+      .on(t.ignoredAt)
+      .where(sql`${t.ignoredAt} IS NOT NULL`),
     uniqueIndex("emails_cf_message_id").on(t.cfMessageId),
     index("emails_api_key").on(t.apiKeyId, t.createdAt),
     index("emails_domain").on(t.domainId, t.createdAt),

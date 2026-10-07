@@ -1,11 +1,14 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { FAILURES_SQL } from "../src/dashboard/failures-sql";
+import { COUNTS_SQL, SERIES_SQL } from "../src/dashboard/overview-sql";
 
-async function plan(sql: string): Promise<string> {
-  const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`).all<{
-    detail: string;
-  }>();
+async function plan(sql: string, ...binds: number[]): Promise<string> {
+  const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+    .bind(...binds)
+    .all<{
+      detail: string;
+    }>();
 
   return results.map((r) => r.detail).join(" | ");
 }
@@ -17,6 +20,15 @@ describe("overview query plans", () => {
     expect(detail).toContain("emails_status_event");
     expect(detail).not.toContain("emails_scheduled");
     expect(detail).not.toContain("emails_status ");
+  });
+
+  it("does not scan the emails table for the ignored filter", async () => {
+    for (const sql of [COUNTS_SQL, SERIES_SQL]) {
+      const detail = await plan(sql, 1, 2);
+
+      expect(detail).toContain("emails_ignored");
+      expect(detail).not.toMatch(/SCAN emails(?! USING (COVERING )?INDEX)/);
+    }
   });
 
   it("reads the first email from the created index", async () => {

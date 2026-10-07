@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "8af47bb3-447c-449f-8cde-41050eb893c8",
+  "id": "f900e392-dfd8-4665-9c1c-f5f8ba399926",
   "prevId": "5c1f022f-d38d-44fa-a422-34f558b374b1",
   "tables": {
     "api_keys": {
@@ -664,6 +664,14 @@
             "last_event_at"
           ],
           "isUnique": false
+        },
+        "emails_ignored": {
+          "name": "emails_ignored",
+          "columns": [
+            "ignored_at"
+          ],
+          "isUnique": false,
+          "where": "\"emails\".\"ignored_at\" IS NOT NULL"
         },
         "emails_cf_message_id": {
           "name": "emails_cf_message_id",
