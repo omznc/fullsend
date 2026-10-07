@@ -26,7 +26,7 @@ import {
   useToast,
 } from "../components/ui";
 import { duration, percent } from "../lib/format";
-import { useApi, useNow, usePoll, useTitle } from "../lib/hooks";
+import { useApi, useLatest, useNow, usePoll, useTitle } from "../lib/hooks";
 import { isJsonObject, isString, parseJson } from "../lib/json";
 import { Link, navigate, useQuery } from "../lib/router";
 import {
@@ -136,14 +136,16 @@ export function WebhookDetail({ id }: { id: string }) {
 
   const deliveries = useApi<DeliveryList>(listPath);
 
+  const latestPath = useLatest(listPath);
+
   // The first page polls, so a new call shows without a reload. The poll
-  // stops in a hidden tab.
+  // stops in a hidden tab. A response for an old filter is dropped.
   usePoll(
     async () => {
       const polled = listPath;
       const res = await api<DeliveryList>(polled).catch(() => null);
 
-      if (res) deliveries.setData(res);
+      if (res && latestPath.current === polled) deliveries.setData(res);
     },
     firstPage && deliveries.data ? 10_000 : null,
   );

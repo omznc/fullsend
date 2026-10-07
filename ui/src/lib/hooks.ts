@@ -122,6 +122,17 @@ export function useNow(interval = 60_000): number {
   return now;
 }
 
+// A ref that holds the latest value. A callback that waits for a response
+// reads it to see if the request is still the current one.
+export function useLatest<T>(value: T) {
+  const ref = useRef(value);
+  useEffect(() => {
+    ref.current = value;
+  });
+
+  return ref;
+}
+
 export interface PollState {
   // True after `max` calls. The poll makes no more calls until restart.
   stopped: boolean;

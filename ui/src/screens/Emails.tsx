@@ -39,6 +39,7 @@ import {
   useDismiss,
   useNarrow,
   useNow,
+  useLatest,
   usePoll,
   usePresence,
   useTitle,
@@ -167,12 +168,15 @@ export function Emails() {
     null,
   );
 
+  const latestPath = useLatest(path);
+
   usePoll(
     async () => {
       const polled = path;
       const res = await api<List<Email>>(polled).catch(() => null);
 
-      if (!res) return;
+      // Drop a response for a filter that is no longer current.
+      if (!res || latestPath.current !== polled) return;
 
       if (firstPage && !hovering.current) {
         setData(res);
