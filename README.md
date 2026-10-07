@@ -313,8 +313,9 @@ has a valid API key. A request with a missing or wrong key has no row. A
 A row has the time, the method, the path with its ids, the status, the API
 key, the time taken and, for an error, the error name and message.
 
-The log never stores a request body, a response body, a header or the API
-key. The path has no query string. The `/t` tracking links, `/health`, the
+The log never stores a request body, a header or the API key. It stores
+the error name and message of an error response, and no other response
+body. The path has no query string. The `/t` tracking links, `/health`, the
 dashboard `/api` and the static files are not in the log.
 
 The retention job deletes the rows after 14 days. To stop the log, turn off
