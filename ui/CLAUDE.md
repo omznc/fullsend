@@ -8,9 +8,9 @@ serves the build (`ui/dist`) through Workers Static Assets. Read the root
 
 - **A dashboard page must never use a path that the public API owns.** The
   public API owns `/emails`, `/domains`, `/api-keys`, `/webhooks`,
-  `/suppressions`, `/logs`, `/t` and `/health`, and Cloudflare Access bypasses them. The Worker also owns
-  `/api` and Access owns `/cdn-cgi`. All dashboard pages live under
-  `/dashboard`. A direct load of `/emails` gets the Resend API, not the UI.
+  `/suppressions`, `/logs`, `/t` and `/health`, and Cloudflare Access
+  bypasses them. The Worker also owns `/api` and Access owns `/cdn-cgi`.
+  All dashboard pages live under `/dashboard`. A direct load of `/emails` gets the Resend API, not the UI.
 - **Let the router add `/dashboard`.** `BASE` and `toUrl` are in
   `src/lib/router.tsx`. Screens and `ROUTES` in `src/App.tsx` use paths
   without the base (`/emails/:id`). `Link`, `navigate` and `toUrl` add it.
@@ -77,8 +77,8 @@ check. The full list is in `pnpm exec oxlint --print-config`.
 - `src/screens/` has one file per screen. A large screen has a folder for
   its parts (`domains/`, `webhooks/`, `wizard/`).
 - `src/api.ts` is the client for `/api` and holds the response types.
-  `src/lib/hooks.ts` has `useApi`, `useNow`, `usePoll`, `useNarrow` and
-  `useTitle`. `src/session.tsx` has `useSession` and `apiBase` (the public
+  `src/lib/hooks.ts` has `useApi`, `useNow`, `usePoll`, `useNarrow`,
+  `useLatest`, `useDebounce` and `useTitle`. `src/session.tsx` has `useSession` and `apiBase` (the public
   API URL for snippets).
 - `src/lib/format.ts` formats times, numbers, sizes and addresses.
 

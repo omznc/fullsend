@@ -15,7 +15,8 @@ in Settings and in `GET /health`.
 - Widen the pending window of an idempotency key.
 - Store dead queue messages in the system events.
 - Delete the R2 bodies together with the old rows in the retention job.
-- Escape the `LIKE` wildcards in search terms.
+- Search for the text as it is. The characters `%` and `_`, and a long
+  term, work in a search.
 - Cut the table scans in the overview query. The overview returns
   `has_emails` in place of `total_emails`.
 - Order the webhook attempts by the attempt number.

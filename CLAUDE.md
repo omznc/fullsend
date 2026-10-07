@@ -52,8 +52,8 @@ when you change `ui/`. It needs a Chromium browser: run
 CI (`.github/workflows/ci.yml`) runs on a push to `main` and on each pull
 request: `pnpm install --frozen-lockfile`, `pnpm lint:ci`, `pnpm build`,
 `pnpm exec wrangler deploy --dry-run`, `pnpm typecheck` and `pnpm test`,
-on Node 24. A second job, `e2e`, installs
-Chromium and runs `pnpm test:e2e`. CI never deploys.
+on Node 24. A second job, `e2e`, installs Chromium and runs
+`pnpm test:e2e`. CI never deploys.
 
 `pnpm dev` serves the UI from `ui/dist`. Run `pnpm build` first, or use
 `pnpm dev:ui` for hot reload. Copy `.dev.vars.example` to `.dev.vars` and set

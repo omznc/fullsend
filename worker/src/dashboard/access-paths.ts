@@ -216,9 +216,9 @@ function mergeDestinations(
 // Sets the destinations of an existing application to the current public
 // paths. The PUT call replaces the whole application. So the sync reads
 // the application, keeps every writable field, and adds the missing
-// public paths to `destinations`. Then it reads the application again. If the check
-// fails, it puts the first copy back. The sync writes `access_paths` only
-// after a check that passes.
+// public paths to `destinations`. Then it reads the application again. If
+// the check fails, it puts the first copy back. The sync writes
+// `access_paths` only after a check that passes.
 export async function syncApiApp(
   env: Env,
   cf: Cloudflare,
