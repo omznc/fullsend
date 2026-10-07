@@ -249,21 +249,7 @@ export async function syncApiApp(
     mergeDestinations(current, wanted),
   );
 
-  let problem: string | null = null;
-
-  try {
-    await cf.updateAccessApp(app.id, next);
-    const after = await readApp(cf, app.id);
-    const uris = new Set((after.fields.destinations ?? []).map((d) => d.uri));
-
-    if (!wanted.every((d) => uris.has(d.uri)))
-      problem =
-        "A public path is missing from the application after the update.";
-    else if (!(after.fields.policies ?? []).some(isPublicBypass))
-      problem = "The public bypass policy is missing after the update.";
-  } catch (err) {
-    problem = err instanceof Error ? err.message : "Unknown error.";
-  }
+  const problem = await applyUpdate(cf, app.id, next, wanted);
 
   if (problem === null) {
     await rememberPaths(env);
@@ -271,8 +257,66 @@ export async function syncApiApp(
     return;
   }
 
+  await undoUpdate(cf, app.id, original, problem);
+}
+
+// Sends the new application and reads it again. It returns the problem, or
+// null when the check passes. A refusal with a 4xx status means that
+// Cloudflare did not store the body, so there is nothing to undo.
+async function applyUpdate(
+  cf: Cloudflare,
+  id: string,
+  next: AccessAppUpdate,
+  wanted: { uri: string }[],
+): Promise<string | null> {
   try {
-    await cf.updateAccessApp(app.id, original);
+    await cf.updateAccessApp(id, next);
+  } catch (err) {
+    if (err instanceof CloudflareError && err.status < 500) {
+      throw new AccessSyncError(
+        `The path sync failed (${err.message}). Nothing changed.`,
+      );
+    }
+
+    return err instanceof Error ? err.message : "Unknown error.";
+  }
+
+  return checkApp(cf, id, wanted);
+}
+
+// Reads the application again. It returns the problem, or null.
+async function checkApp(
+  cf: Cloudflare,
+  id: string,
+  wanted: { uri: string }[],
+): Promise<string | null> {
+  try {
+    const after = await readApp(cf, id);
+    const uris = new Set((after.fields.destinations ?? []).map((d) => d.uri));
+
+    if (!wanted.every((d) => uris.has(d.uri))) {
+      return "A public path is missing from the application after the update.";
+    }
+
+    if (!(after.fields.policies ?? []).some(isPublicBypass)) {
+      return "The public bypass policy is missing after the update.";
+    }
+  } catch (err) {
+    return err instanceof Error ? err.message : "Unknown error.";
+  }
+
+  return null;
+}
+
+// Puts the first copy back and tells the owner what happened.
+async function undoUpdate(
+  cf: Cloudflare,
+  id: string,
+  original: AccessAppUpdate,
+  problem: string,
+): Promise<never> {
+  try {
+    await cf.updateAccessApp(id, original);
   } catch (err) {
     const detail = err instanceof CloudflareError ? err.message : "error";
 

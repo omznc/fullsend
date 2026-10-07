@@ -1009,6 +1009,32 @@ describe("Access path sync", () => {
     expect((await settingsJson()).access.paths_current).toBe(false);
   });
 
+  it("sends no undo when Cloudflare refuses the update", async () => {
+    const puts: JsonObject[] = [];
+    const routes = statefulApp(oldApp, puts);
+
+    // A 4xx from the PUT: Cloudflare stored nothing.
+    fake = fakeCloudflare({
+      ...routes,
+      [`PUT /accounts/${ACCOUNT}/access/apps/api1`]: (c: Call) => {
+        if (isJsonObject(c.body)) puts.push(c.body);
+
+        return null;
+      },
+    });
+
+    const res = await syncPaths();
+
+    expect(res.status).toBe(422);
+
+    const body = z.object({ message: z.string() }).parse(await res.json());
+
+    expect(body.message).toContain("Nothing changed");
+    expect(body.message).not.toContain("could not undo");
+    expect(puts).toHaveLength(1);
+    expect((await storedPaths())?.value).toBeUndefined();
+  });
+
   it("needs the header, a session and a Cloudflare app", async () => {
     fake = fakeCloudflare({
       [`GET /accounts/${ACCOUNT}/access/apps`]: [],
