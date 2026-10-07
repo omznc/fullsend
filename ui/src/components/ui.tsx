@@ -2051,8 +2051,49 @@ export function TableRow({
   );
 }
 
+// The previous and next buttons of a Pager.
+function PagerButtons({
+  hasPrev,
+  hasNext,
+  onPrev,
+  onNext,
+  full,
+}: {
+  hasPrev: boolean;
+  hasNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  full?: boolean;
+}) {
+  const wide = full && "max-md:h-11 max-md:flex-1 max-md:justify-center";
+
+  return (
+    <span className={cx("flex gap-1.5", full && "max-md:w-full")}>
+      <Button
+        size="sm"
+        icon="chevron-left"
+        disabled={!hasPrev}
+        onClick={onPrev}
+        className={cx(wide)}
+      >
+        previous
+      </Button>
+      <Button
+        size="sm"
+        iconEnd="chevron-right"
+        disabled={!hasNext}
+        onClick={onNext}
+        className={cx(wide)}
+      >
+        next
+      </Button>
+    </span>
+  );
+}
+
 // Previous and next pages with Resend's cursors. With `full`, a narrow
-// screen hides the note and makes the buttons tall and full width.
+// screen hides the note and makes the buttons tall and full width. With
+// one page and no cursor, the pager shows the note only.
 export function Pager({
   hasPrev,
   hasNext,
@@ -2068,33 +2109,27 @@ export function Pager({
   note?: ReactNode;
   full?: boolean;
 }) {
-  if (!hasPrev && !hasNext && !note) return null;
+  const single = !hasPrev && !hasNext;
 
-  const wide = full && "max-md:h-11 max-md:flex-1 max-md:justify-center";
+  if (single && !note) return null;
 
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2.5 text-[12.5px] text-fg3 md:px-8">
+    <div
+      className={cx(
+        "flex items-center justify-between gap-3 px-4 py-2.5 text-[12.5px] text-fg3 md:px-8",
+        full && single && "max-md:hidden",
+      )}
+    >
       <span className={cx(full && "max-md:hidden")}>{note}</span>
-      <span className={cx("flex gap-1.5", full && "max-md:w-full")}>
-        <Button
-          size="sm"
-          icon="chevron-left"
-          disabled={!hasPrev}
-          onClick={onPrev}
-          className={cx(wide)}
-        >
-          previous
-        </Button>
-        <Button
-          size="sm"
-          iconEnd="chevron-right"
-          disabled={!hasNext}
-          onClick={onNext}
-          className={cx(wide)}
-        >
-          next
-        </Button>
-      </span>
+      {!single && (
+        <PagerButtons
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+          onPrev={onPrev}
+          onNext={onNext}
+          full={full}
+        />
+      )}
     </div>
   );
 }
