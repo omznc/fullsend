@@ -308,6 +308,19 @@ async function findFailed(
 // second call at the same time gets none of the same ids, because the
 // insert is one statement. An old mark, or a mark with a newer attempt
 // after it, is taken over.
+// The unary plus on x.webhook_id stops the planner from using the index
+// webhook_deliveries_webhook. That index would read all the rows of the
+// webhook for each conflicting message. The index
+// webhook_deliveries_message reads only the rows of one message.
+export const CLAIM_REPLAYS_SQL = `INSERT INTO webhook_replays (webhook_id, message_id, queued_at)
+     SELECT ?1, value, ?2 FROM json_each(?3) WHERE true
+     ON CONFLICT (webhook_id, message_id) DO UPDATE SET queued_at = excluded.queued_at
+       WHERE webhook_replays.queued_at < ?4
+         OR webhook_replays.queued_at < (
+           SELECT MAX(x.created_at) FROM webhook_deliveries x
+           WHERE x.message_id = webhook_replays.message_id AND +x.webhook_id = ?1)
+     RETURNING message_id`;
+
 async function claimReplays(
   env: Env,
   webhookId: string,
@@ -316,16 +329,7 @@ async function claimReplays(
 ): Promise<Set<string>> {
   if (!ids.length) return new Set();
 
-  const { results } = await env.DB.prepare(
-    `INSERT INTO webhook_replays (webhook_id, message_id, queued_at)
-     SELECT ?1, value, ?2 FROM json_each(?3) WHERE true
-     ON CONFLICT (webhook_id, message_id) DO UPDATE SET queued_at = excluded.queued_at
-       WHERE webhook_replays.queued_at < ?4
-         OR webhook_replays.queued_at < (
-           SELECT MAX(x.created_at) FROM webhook_deliveries x
-           WHERE x.webhook_id = ?1 AND x.message_id = webhook_replays.message_id)
-     RETURNING message_id`,
-  )
+  const { results } = await env.DB.prepare(CLAIM_REPLAYS_SQL)
     .bind(webhookId, now, JSON.stringify(ids), now - REPLAY_HOLD_MS)
     .all<{ message_id: string }>();
 
