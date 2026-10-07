@@ -32,7 +32,7 @@ describe("domain fields that fullsend cannot honor", () => {
     ["capabilities.sending", { capabilities: { sending: "disabled" } }],
     ["capabilities", { capabilities: { sending: "enabled", other: "x" } }],
     ["capabilities", { capabilities: "enabled" }],
-  ])("refuses %s on create", async (field, extra) => {
+  ])("refuses %s %j on create", async (field, extra) => {
     const res = await send("POST", "/domains", {
       name: "new.example.com",
       ...extra,
