@@ -51,7 +51,8 @@ when you change `ui/`. It needs a Chromium browser: run
 
 CI (`.github/workflows/ci.yml`) runs on a push to `main` and on each pull
 request: `pnpm install --frozen-lockfile`, `pnpm lint:ci`, `pnpm build`,
-`pnpm typecheck` and `pnpm test`, on Node 24. A second job, `e2e`, installs
+`pnpm exec wrangler deploy --dry-run`, `pnpm typecheck` and `pnpm test`,
+on Node 24. A second job, `e2e`, installs
 Chromium and runs `pnpm test:e2e`. CI never deploys.
 
 `pnpm dev` serves the UI from `ui/dist`. Run `pnpm build` first, or use
@@ -118,9 +119,9 @@ formats Markdown and JSON. `worker/migrations`, `pnpm-lock.yaml` and
 ## Rules for the whole repo
 
 - **The public API owns `/emails`, `/domains`, `/api-keys`, `/webhooks`,
-  `/t` and `/health`.** Cloudflare Access bypasses these paths (the
-  "fullsend API" application, `PUBLIC_PATHS` in
-  `worker/src/dashboard/setup.ts`). Everything else on the API hostname is
+  `/suppressions`, `/logs`, `/t` and `/health`.** Cloudflare Access
+  bypasses these paths (the "fullsend API" application, `PUBLIC_PATHS` in
+  `worker/src/public-paths.ts`). Everything else on the API hostname is
   behind Access. A dashboard page must never use one of these paths. The
   dashboard pages live under `/dashboard`. See `ui/CLAUDE.md`.
 - **Every non-GET request to `/api` needs the header
@@ -152,8 +153,10 @@ To make a release:
 1. Set `version` in the root `package.json`. The test
    `worker/test/version.test.ts` keeps `VERSION` in `worker/src/version.ts`
    in step with it. Change both.
-2. Add a section `## <version>` at the top of `CHANGELOG.md`.
-3. Commit. The user tags the commit `v<version>`. Agents do not push tags.
+2. Set `info.version` in `openapi.json` to the same version. The test
+   `worker/test/openapi.test.ts` fails if the two differ.
+3. Add a section `## <version>` at the top of `CHANGELOG.md`.
+4. Commit. The user tags the commit `v<version>`. Agents do not push tags.
 
 ## Gotchas
 

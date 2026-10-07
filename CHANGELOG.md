@@ -10,7 +10,7 @@ in Settings and in `GET /health`.
 - Sweep the emails that stay in the send queue. The cron job now handles
   each email that is pending for 30 minutes or more.
 - Keep the claim when the write of the message ID fails. The consumer
-  tries the write 3 times, then it writes an `error` system event.
+  tries the write 4 times, then it writes an `error` system event.
 - Record a failed event when the put on the queue fails.
 - Widen the pending window of an idempotency key.
 - Store dead queue messages in the system events.
@@ -25,6 +25,8 @@ in Settings and in `GET /health`.
 - Send the headers `retry-after` and `ratelimit-*` with a 429 response.
 - Answer 405 with an `Allow` header for a wrong method on a public path.
 - Add the six error names that the Resend SDK has and fullsend did not.
+- Change the name of an unexpected 500 error from `application_error` to
+  `internal_server_error`. The RPC entrypoint keeps `application_error`.
 - Page the lists of domains, API keys and webhooks with `limit`, `after`
   and `before`.
 - Refuse the domain fields that fullsend ignores (`region`, `tls`,
@@ -63,6 +65,9 @@ in Settings and in `GET /health`.
 - Add the system events API, `GET /api/system-events`.
 - Add `POST /api/settings/access/sync-paths`. It updates the public paths
   of the "fullsend API" Access application in a deploy that has Access.
+  An Access deploy must run it (or press the button in Settings) after
+  the update. Without it, `/suppressions` and `/logs` show the Access
+  login page.
 - `GET /api/settings` returns `version` and `access.paths_current`.
 - Settings shows the version.
 - Add ignored emails. The owner can ignore a bounced, failed or complained

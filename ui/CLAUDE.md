@@ -7,8 +7,8 @@ serves the build (`ui/dist`) through Workers Static Assets. Read the root
 ## Traps
 
 - **A dashboard page must never use a path that the public API owns.** The
-  public API owns `/emails`, `/domains`, `/api-keys`, `/webhooks`, `/t` and
-  `/health`, and Cloudflare Access bypasses them. The Worker also owns
+  public API owns `/emails`, `/domains`, `/api-keys`, `/webhooks`,
+  `/suppressions`, `/logs`, `/t` and `/health`, and Cloudflare Access bypasses them. The Worker also owns
   `/api` and Access owns `/cdn-cgi`. All dashboard pages live under
   `/dashboard`. A direct load of `/emails` gets the Resend API, not the UI.
 - **Let the router add `/dashboard`.** `BASE` and `toUrl` are in

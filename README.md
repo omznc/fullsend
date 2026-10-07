@@ -102,6 +102,11 @@ The version and the changes of each release are in `CHANGELOG.md`.
 
 "No valid patches in input" means that the copy is up to date.
 
+If the deploy uses Cloudflare Access, sync the public paths after the
+update. Press the sync button in Settings, or send
+`POST /api/settings/access/sync-paths`. Without the sync, Access shows the
+login page on `/suppressions` and `/logs`.
+
 </details>
 
 ---
@@ -277,8 +282,8 @@ These routes need a full access key. They read the request log (see below).
 | `path` attachments    | 10 or fewer in one email. fullsend fetches them one by one.                                  |
 | `reply_to`            | Cloudflare sends only the first address.                                                     |
 | Missing features      | No templates, audiences, contacts, broadcasts or receiving.                                  |
-| Missing endpoints     | No `POST /emails/:id/share`.                                                                 |
-| Logs                  | No request body, response body or `user_agent`. The log keeps 14 days.                       |
+| Missing endpoints     | No `POST /emails/:id/share`, `/domains/claim`, `/usage`, `/events`, `/segments`, `/topics`.  |
+| Logs                  | No request body, `user_agent` or body of a success response. The log keeps 14 days.          |
 | Domain `region`       | Only `global`. Any other value gives a 422.                                                  |
 | Domain `tls`          | Only `opportunistic`. `enforced` gives a 422.                                                |
 | Domain fields         | `custom_return_path` must be `send`. `tracking_subdomain` gives a 422.                       |
