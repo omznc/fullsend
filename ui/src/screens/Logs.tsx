@@ -1,4 +1,4 @@
-import { type ReactNode, useRef } from "react";
+import type { ReactNode } from "react";
 import { type ApiKey, type RequestLog, type RequestLogPage, qs } from "../api";
 import {
   Badge,
@@ -19,7 +19,7 @@ import {
   type Tone,
 } from "../components/ui";
 import { duration, utc } from "../lib/format";
-import { useApi, useNarrow, useTitle } from "../lib/hooks";
+import { useApi, useDebounce, useNarrow, useTitle } from "../lib/hooks";
 import { useQuery } from "../lib/router";
 
 const PAGE = 25;
@@ -100,12 +100,7 @@ export function Logs() {
   const set = (patch: Record<string, string | null>) =>
     setQuery({ after: null, before: null, log: null, ...patch });
 
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const onSearch = (v: string) => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => set({ q: v.trim() || null }), 300);
-  };
+  const onSearch = useDebounce((v) => set({ q: v.trim() || null }), 300);
 
   const first = rows[0];
   const last = rows[rows.length - 1];

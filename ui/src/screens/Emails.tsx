@@ -36,6 +36,7 @@ import {
 import { plainReason, utc } from "../lib/format";
 import {
   useApi,
+  useDebounce,
   useDismiss,
   useNarrow,
   useNow,
@@ -351,14 +352,10 @@ function FilterBar({
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const domains = useApi<{ data: Domain[] }>(tab === "all" ? "/domains" : null);
   const keys = useApi<{ data: ApiKey[] }>("/api-keys");
 
-  const onSearch = (v: string) => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => set({ q: v.trim() || null }), 300);
-  };
+  const onSearch = useDebounce((v) => set({ q: v.trim() || null }), 300);
 
   const search = (
     <label className="relative flex min-w-0 flex-1 md:w-[320px] md:flex-none">

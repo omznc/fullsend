@@ -133,6 +133,28 @@ export function useLatest<T>(value: T) {
   return ref;
 }
 
+// Returns a function that calls fn with the last value after `ms` of quiet.
+// A call that waits is cancelled when the component unmounts.
+export function useDebounce(fn: (value: string) => void, ms: number) {
+  const latest = useLatest(fn);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  return useCallback(
+    (value: string) => {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => latest.current(value), ms);
+    },
+    [latest, ms],
+  );
+}
+
 export interface PollState {
   // True after `max` calls. The poll makes no more calls until restart.
   stopped: boolean;
