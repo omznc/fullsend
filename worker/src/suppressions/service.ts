@@ -270,7 +270,7 @@ export async function listSuppressions(
   const address = cursor ? addressOfId(cursor) : null;
 
   if (cursor && address === null) {
-    throw new ApiError(422, "invalid_parameter", "The cursor id is not valid.");
+    throw new ApiError(422, "validation_error", "The cursor id is not valid.");
   }
 
   return pageQuery<SuppressionRow>(

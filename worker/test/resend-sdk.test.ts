@@ -582,13 +582,13 @@ describe("pagination", () => {
     const limit = await resend.domains.list({ limit: 101 });
     expect(limit.error).toMatchObject({
       statusCode: 422,
-      name: "invalid_parameter",
+      name: "validation_error",
     });
 
     const cursor = await resend.webhooks.list({ after: "missing" });
     expect(cursor.error).toMatchObject({
       statusCode: 422,
-      name: "invalid_parameter",
+      name: "validation_error",
     });
   });
 });
@@ -748,7 +748,7 @@ describe("suppressions", () => {
     const bad = await resend.suppressions.list({ after: "nope" });
     expect(bad.error).toMatchObject({
       statusCode: 422,
-      name: "invalid_parameter",
+      name: "validation_error",
     });
 
     const origin = await resend.suppressions.list({
@@ -981,7 +981,7 @@ describe("email attachments", () => {
     const bad = await client.emails.attachments.list({ emailId, after: "9" });
     expect(bad.error).toMatchObject({
       statusCode: 422,
-      name: "invalid_parameter",
+      name: "validation_error",
     });
   });
 
@@ -1193,7 +1193,7 @@ describe("webhook events", () => {
     const bad = await client.webhooks.events.list({ webhookId, after: "nope" });
     expect(bad.error).toMatchObject({
       statusCode: 422,
-      name: "invalid_parameter",
+      name: "validation_error",
     });
   });
 

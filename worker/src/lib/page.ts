@@ -17,7 +17,7 @@ export function parsePage(query: Record<string, string | undefined>): Page {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       throw new ApiError(
         422,
-        "invalid_parameter",
+        "validation_error",
         "The `limit` must be an integer from 1 to 100.",
       );
     }
@@ -28,7 +28,7 @@ export function parsePage(query: Record<string, string | undefined>): Page {
   if (query.after && query.before) {
     throw new ApiError(
       422,
-      "invalid_parameter",
+      "validation_error",
       "Use `after` or `before`, not both.",
     );
   }
@@ -66,7 +66,7 @@ export async function pageQuery<T>(
     if (!cursor)
       throw new ApiError(
         422,
-        "invalid_parameter",
+        "validation_error",
         "The cursor id does not exist.",
       );
     conds.push(

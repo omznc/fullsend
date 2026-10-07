@@ -115,7 +115,7 @@ export async function listEvents(
     if (at === null) {
       throw new ApiError(
         422,
-        "invalid_parameter",
+        "validation_error",
         "The cursor id does not exist.",
       );
     }

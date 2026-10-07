@@ -101,7 +101,7 @@ export async function listAttachments(
     if (!INDEX.test(cursor) || Number(cursor) >= all.length) {
       throw new ApiError(
         422,
-        "invalid_parameter",
+        "validation_error",
         "The cursor id does not exist.",
       );
     }
