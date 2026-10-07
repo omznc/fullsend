@@ -318,7 +318,7 @@ fullsend writes one log row for each request to a Resend API route that
 has a valid API key. A request with a missing or wrong key has no row. A
 `429` response has no row. The Logs screen and `GET /logs` show the rows.
 A row has the time, the method, the path with its ids, the status, the API
-key, the time taken and, for an error, the error name and message.
+key id, the time taken and, for an error, the error name and message.
 
 The log never stores a request body, a header or the API key. It stores
 the error name and message of an error response, and no other response
