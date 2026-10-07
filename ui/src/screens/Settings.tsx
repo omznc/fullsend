@@ -511,7 +511,7 @@ function Content({ data, reload }: { data: SettingsData; reload: Reload }) {
       <Section
         icon="archive"
         title="Retention"
-        help="Old data is deleted every night. Shorter keeps your database small."
+        help="Old data is deleted each hour. Shorter keeps your database small."
       >
         <ValueRow
           label="Email bodies"
