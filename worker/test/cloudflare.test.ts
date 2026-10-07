@@ -734,6 +734,7 @@ describe("Access path sync", () => {
     await set("access_team_domain", "team.cloudflareaccess.com");
     await set("access_aud", "aud1");
     await set("api_hostname", "email.example.com");
+    await set("access_app_ids", "dash1,api1");
     await env.DB.prepare(
       "DELETE FROM settings WHERE key = 'access_paths'",
     ).run();
@@ -812,6 +813,13 @@ describe("Access path sync", () => {
     z
       .object({ access: z.object({ paths_current: z.boolean().nullable() }) })
       .parse(await (await request("/api/settings")).json());
+
+  it("gives no path state after a manual Access setup", async () => {
+    // The manual setup makes no application ids and writes no paths.
+    await set("access_app_ids", "");
+
+    expect((await settingsJson()).access.paths_current).toBeNull();
+  });
 
   it("sets the destinations and keeps the other fields", async () => {
     const puts: JsonObject[] = [];

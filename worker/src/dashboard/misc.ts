@@ -703,9 +703,11 @@ miscRoutes.get("/settings", async (c) => {
       public_paths: PUBLIC_PATHS,
       // True when the paths that fullsend last wrote into the "fullsend
       // API" application are the current ones. Null when there is no
-      // Access. This is what fullsend wrote, not the live state.
+      // Access, or when the owner made the applications by hand: the
+      // setup then wrote no paths and fullsend does not know the
+      // applications. This is what fullsend wrote, not the live state.
       paths_current:
-        s.access_team_domain && s.access_aud
+        s.access_team_domain && s.access_aud && s.access_app_ids
           ? s.access_paths === PUBLIC_PATHS.join(",")
           : null,
     },
