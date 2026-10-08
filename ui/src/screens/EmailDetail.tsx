@@ -663,102 +663,106 @@ function Loaded({
             </span>
           </div>
         </div>
-        <div className="relative flex flex-wrap gap-1.5">
-          {scheduled ? (
-            <>
-              <Button
-                icon="close"
-                className={cx(actionClass, "text-red")}
-                onClick={() => setCancelOpen(true)}
-              >
-                cancel
-              </Button>
-              <Button
-                variant="primary"
-                icon="calendar"
-                className={actionClass}
-                aria-expanded={picker}
-                onClick={() => setPicker((v) => !v)}
-              >
-                reschedule
-              </Button>
-              {pickerShown && !narrow && (
-                <Popover open={picker} onClose={() => setPicker(false)}>
-                  <ReschedulePicker
-                    now={now}
-                    initial={email.scheduled_at}
-                    id={email.id}
-                    onDone={() => {
-                      setPicker(false);
-                      void reload();
-                    }}
-                  />
-                </Popover>
-              )}
-              {narrow && (
-                <Dialog
-                  open={picker}
-                  onClose={() => setPicker(false)}
-                  title="Reschedule"
-                  width={340}
-                >
-                  <ReschedulePicker
-                    now={now}
-                    initial={email.scheduled_at}
-                    id={email.id}
-                    onDone={() => {
-                      setPicker(false);
-                      void reload();
-                    }}
-                  />
-                </Dialog>
-              )}
-              <ConfirmDialog
-                open={cancelOpen}
-                onClose={() => setCancelOpen(false)}
-                title="Cancel this email?"
-                body="The email will not be sent. You cannot undo this."
-                action="cancel email"
-                onConfirm={async () => {
-                  await api(`/emails/${email.id}/cancel`, { method: "POST" });
-                  await reload();
-                }}
-              />
-            </>
-          ) : (
-            <>
-              <Button
-                icon={copied ? "check" : "code"}
-                className={actionClass}
-                disabled={bodyRes.loading || (!bodyRes.data && !bodyRes.error)}
-                onClick={copyCurl}
-              >
-                {copied ? "copied" : "copy as curl"}
-              </Button>
-              <Button
-                variant="primary"
-                icon="reload"
-                className={actionClass}
-                busy={again}
-                disabled={bodyDeleted || email.status === "suppressed"}
-                onClick={() => void sendAgain()}
-              >
-                send again
-              </Button>
-              {canIgnore && (
+        <div className="flex flex-col items-end gap-1.5 max-md:items-start">
+          <div className="relative flex flex-wrap gap-1.5">
+            {scheduled ? (
+              <>
                 <Button
-                  icon={email.ignored_at ? "eye" : "eye-closed"}
-                  className={actionClass}
-                  busy={ignoring}
-                  onClick={() => void toggleIgnore()}
+                  icon="close"
+                  className={cx(actionClass, "text-red")}
+                  onClick={() => setCancelOpen(true)}
                 >
-                  {email.ignored_at ? "stop ignoring" : "ignore"}
+                  cancel
                 </Button>
-              )}
-            </>
-          )}
+                <Button
+                  variant="primary"
+                  icon="calendar"
+                  className={actionClass}
+                  aria-expanded={picker}
+                  onClick={() => setPicker((v) => !v)}
+                >
+                  reschedule
+                </Button>
+                {pickerShown && !narrow && (
+                  <Popover open={picker} onClose={() => setPicker(false)}>
+                    <ReschedulePicker
+                      now={now}
+                      initial={email.scheduled_at}
+                      id={email.id}
+                      onDone={() => {
+                        setPicker(false);
+                        void reload();
+                      }}
+                    />
+                  </Popover>
+                )}
+                {narrow && (
+                  <Dialog
+                    open={picker}
+                    onClose={() => setPicker(false)}
+                    title="Reschedule"
+                    width={340}
+                  >
+                    <ReschedulePicker
+                      now={now}
+                      initial={email.scheduled_at}
+                      id={email.id}
+                      onDone={() => {
+                        setPicker(false);
+                        void reload();
+                      }}
+                    />
+                  </Dialog>
+                )}
+                <ConfirmDialog
+                  open={cancelOpen}
+                  onClose={() => setCancelOpen(false)}
+                  title="Cancel this email?"
+                  body="The email will not be sent. You cannot undo this."
+                  action="cancel email"
+                  onConfirm={async () => {
+                    await api(`/emails/${email.id}/cancel`, { method: "POST" });
+                    await reload();
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <Button
+                  icon={copied ? "check" : "code"}
+                  className={actionClass}
+                  disabled={
+                    bodyRes.loading || (!bodyRes.data && !bodyRes.error)
+                  }
+                  onClick={copyCurl}
+                >
+                  {copied ? "copied" : "copy as curl"}
+                </Button>
+                <Button
+                  variant="primary"
+                  icon="reload"
+                  className={actionClass}
+                  busy={again}
+                  disabled={bodyDeleted || email.status === "suppressed"}
+                  onClick={() => void sendAgain()}
+                >
+                  send again
+                </Button>
+                {canIgnore && (
+                  <Button
+                    icon={email.ignored_at ? "eye" : "eye-closed"}
+                    className={actionClass}
+                    busy={ignoring}
+                    onClick={() => void toggleIgnore()}
+                  >
+                    {email.ignored_at ? "stop ignoring" : "ignore"}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
           {!scheduled && canIgnore && (
-            <p className="m-0 basis-full text-[12px] text-fg3">
+            <p className="m-0 text-[12px] text-fg3">
               Ignored emails do not count in the stats.
             </p>
           )}
