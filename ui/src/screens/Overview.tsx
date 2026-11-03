@@ -79,6 +79,12 @@ const cell = "border-line lg:border-r";
 // Formats for the animated numbers. A change is a percent with one digit.
 const pct1 = (v: number) => `${v.toFixed(1).replace(/\.0$/, "")}%`;
 
+const points = (v: number) => `${v.toFixed(1).replace(/\.0$/, "")} pt`;
+
+// These cells compare their rate of the sent count, not the count. A
+// smaller week with the same rate shows no change.
+const RATED = new Set(["delivered", "opened", "clicked"]);
+
 const pct2 = (v: number) => percent(v, 2);
 
 export function Overview() {
@@ -426,7 +432,9 @@ function Legend({
 // The six numbers with the change from the period before.
 
 function StatRow({ data }: { data: OverviewData }) {
-  const sent = data.stats.find((s) => s.type === "sent")?.value ?? 0;
+  const sentStat = data.stats.find((s) => s.type === "sent");
+  const sent = sentStat?.value ?? 0;
+  const prevSent = sentStat?.previous ?? 0;
   const delivered = data.stats.find((s) => s.type === "delivered")?.value ?? 0;
 
   return (
@@ -457,12 +465,20 @@ function StatRow({ data }: { data: OverviewData }) {
           );
 
         const previous = s.previous;
-        const diff = s.value - previous;
-        const bad = s.type === "bounced" || s.type === "complained";
-        const counted = bad;
+        const rated = RATED.has(s.type) && sent > 0 && prevSent > 0;
 
-        const delta = counted ? (
+        // A rated cell shows the change of its rate in points, rounded to
+        // the 0.1 that the cell shows.
+        const diff = rated
+          ? Math.round((s.value / sent - previous / prevSent) * 1000) / 10
+          : s.value - previous;
+
+        const bad = s.type === "bounced" || s.type === "complained";
+
+        const delta = bad ? (
           <AnimatedNumber value={Math.abs(diff)} />
+        ) : rated ? (
+          <AnimatedNumber value={Math.abs(diff)} format={points} />
         ) : previous ? (
           <AnimatedNumber
             value={Math.abs(diff / previous) * 100}
@@ -473,7 +489,7 @@ function StatRow({ data }: { data: OverviewData }) {
         );
 
         const tone =
-          diff === 0 || (!bad && s.type !== "delivered")
+          diff === 0 || (!bad && !rated)
             ? "text-fg2"
             : diff > 0 === bad
               ? "text-red"
