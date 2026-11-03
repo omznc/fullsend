@@ -3,6 +3,14 @@
 Each section lists the changes of one release. A deploy shows its version
 in Settings and in `GET /health`.
 
+## 0.2.1
+
+### Dashboard
+
+- Compare the rate in the delivered, opened and clicked cells of the
+  overview. The cells show the change of the rate in points, not the
+  change of the count. A smaller week with the same rate shows no change.
+
 ## 0.2.0
 
 ### Reliability

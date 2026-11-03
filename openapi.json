@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "fullsend",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "summary": "An email API that is compatible with Resend.",
     "description": "The public API of fullsend. The paths, the request bodies, the responses and the error names follow Resend. Send an API key as `Authorization: Bearer <key>`. fullsend does not serve this file: it is in the repository.",
     "license": {
