@@ -28,6 +28,15 @@ export const DEFAULTS = {
   default_click_tracking: "true",
   // "false" turns off the request log (see src/lib/request-log.ts).
   request_log: "true",
+  // "true" sends a daily anonymous ping (see src/lib/telemetry.ts). It is
+  // on by default. The owner turns it off in Settings. The id is a random
+  // UUID.
+  telemetry: "true",
+  // "true" adds the counts to the ping. "false" sends only the version.
+  telemetry_counts: "true",
+  telemetry_id: "",
+  // The newest version on GitHub, from the daily update check.
+  latest_version: "",
   deploy_name: "fullsend",
   setup_completed: "false",
 } as const;

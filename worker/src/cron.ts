@@ -3,7 +3,9 @@ import type { Env, SendMessage } from "./env";
 import { hasToken } from "./lib/cloudflare";
 import { getSettings } from "./lib/settings";
 import { errorText, logSystemEvent } from "./lib/system-events";
+import { sendTelemetry } from "./lib/telemetry";
 import { DAY } from "./lib/time";
+import { checkForUpdate } from "./lib/update-check";
 import { type EmailDbRow, fail, rowToEmail } from "./send/consumer";
 
 // One cron runs each minute. Each minute it sends due scheduled emails
@@ -28,6 +30,11 @@ export async function runCron(
 
   if (at.getUTCMinutes() === RETENTION_MINUTE)
     jobs.set("retention", retention(env, at.getTime()));
+
+  if (at.getUTCHours() === 3 && at.getUTCMinutes() === 23) {
+    jobs.set("telemetry", sendTelemetry(env));
+    jobs.set("update-check", checkForUpdate(env));
+  }
 
   const results = await Promise.allSettled(jobs.values());
   const names = [...jobs.keys()];

@@ -7,6 +7,7 @@ import { asRecord, isHostname, readJson } from "../lib/http";
 import { isString } from "../lib/json";
 import { setupCode } from "../lib/secrets";
 import { getSettings, type Settings, setSettings } from "../lib/settings";
+import { updateInfo } from "../lib/update-check";
 import { PUBLIC_PATHS } from "../public-paths";
 import {
   AccessSyncError,
@@ -70,6 +71,7 @@ setupRoutes.get("/session", async (c) => {
     tracking_hostname: settings.tracking_hostname || null,
     logout_url:
       session.mode === "access" ? "/cdn-cgi/access/logout" : "/api/auth/logout",
+    update: updateInfo(settings.latest_version, Boolean(session.identity)),
   });
 });
 

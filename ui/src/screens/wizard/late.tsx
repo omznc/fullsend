@@ -9,6 +9,7 @@ import {
 import {
   Badge,
   Button,
+  Checkbox,
   CodeBlock,
   Dialog,
   ErrorState,
@@ -633,10 +634,109 @@ function Live({
 
 // Step 8: done
 
+// The example of the daily ping. It shows only the fields that are sent.
+function pingExample(stats: boolean, counts: boolean): string {
+  if (!stats) return "// Nothing is sent.";
+
+  const lines = ['"version": "x.y.z"'];
+
+  if (counts) {
+    lines.push(
+      '"auth_mode": "access"',
+      '"domains": 1',
+      '"sent_24h": 120',
+      '"failed_24h": 0',
+      '"bounced_24h": 2',
+      '"errors_24h": 0',
+    );
+  }
+
+  return `{
+  "event": "instance_ping",
+  "distinct_id": "<a random id>",
+  "properties": {
+${lines.map((l) => `    ${l}`).join(",\n")}
+  }
+}`;
+}
+
+// The telemetry choice: one row, with the counts and the example ping
+// behind the details button.
+function UsageStats({
+  stats,
+  counts,
+  setStats,
+  setCounts,
+  disabled,
+}: {
+  stats: boolean;
+  counts: boolean;
+  setStats: (v: boolean) => void;
+  setCounts: (v: boolean) => void;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-3 border-y border-line py-3">
+      <div className="flex items-center gap-3">
+        <Checkbox checked={stats} onChange={setStats} disabled={disabled}>
+          Send basic anonymous usage
+        </Checkbox>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls="usage-stats"
+          onClick={() => setOpen((o) => !o)}
+          className="ml-auto flex items-center gap-0.5 font-mono text-[12.5px] text-fg3 hover:text-fg"
+        >
+          details
+          <Icon name={open ? "chevron-down" : "chevron-right"} size={16} />
+        </button>
+      </div>
+      {open && (
+        <div id="usage-stats" className="flex flex-col gap-2">
+          <Checkbox
+            checked={stats && counts}
+            onChange={setCounts}
+            disabled={disabled || !stats}
+          >
+            Include counts
+          </Checkbox>
+          <Hint>
+            Once a day, this deploy sends a random id and the version. With
+            counts, it also sends the login type, the number of domains, and the
+            email and error counts of 24 hours. It never sends addresses, domain
+            names or error text. Change it later in Settings.
+          </Hint>
+          <CodeBlock
+            tabs={[{ label: "daily ping", code: pingExample(stats, counts) }]}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The settings that the end of the setup writes. A second run of the setup
+// keeps the telemetry choice from Settings.
+function finishBody(first: boolean, stats: boolean, counts: boolean) {
+  if (!first) return { setup_completed: "true" };
+
+  return {
+    setup_completed: "true",
+    telemetry: stats ? "true" : "false",
+    telemetry_counts: stats && counts ? "true" : "false",
+  };
+}
+
 export function StepDone({ flow }: { flow: Flow }) {
   const { session, reload } = useSession();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  const [stats, setStats] = useState(true);
+  const [counts, setCounts] = useState(true);
+  const first = !session.setup_completed;
   const d = flow.domain;
 
   const base = flow.hostnames.api
@@ -661,7 +761,7 @@ export function StepDone({ flow }: { flow: Flow }) {
     try {
       await api("/settings", {
         method: "PATCH",
-        body: { setup_completed: "true" },
+        body: finishBody(first, stats, counts),
       });
       await reload();
       navigate(to);
@@ -718,6 +818,15 @@ const { data, error } = await env.FULLSEND.sendEmail({
           },
         ]}
       />
+      {first && (
+        <UsageStats
+          stats={stats}
+          counts={counts}
+          setStats={setStats}
+          setCounts={setCounts}
+          disabled={Boolean(busy)}
+        />
+      )}
       <div className="flex flex-wrap gap-2">
         <Button
           variant="primary"

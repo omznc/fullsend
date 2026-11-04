@@ -16,6 +16,7 @@ import {
   type SettingKey,
   setSettings,
 } from "../lib/settings";
+import { buildPing, pingAllowed } from "../lib/telemetry";
 import { DAY, iso, isoOrNull } from "../lib/time";
 import { PUBLIC_PATHS } from "../public-paths";
 import { parseAddressColumn } from "../send/consumer";
@@ -679,6 +680,8 @@ const EDITABLE: SettingKey[] = [
   "default_open_tracking",
   "default_click_tracking",
   "request_log",
+  "telemetry",
+  "telemetry_counts",
   "deploy_name",
   "setup_completed",
 ];
@@ -714,6 +717,22 @@ miscRoutes.get("/settings", async (c) => {
     auth_mode: s.auth_mode === "password" ? "password" : "access",
     version: VERSION,
   });
+});
+
+// The ping that the next cron run sends, with live counts. It has no
+// api_key. A deploy gets its id at the first ping.
+miscRoutes.get("/settings/telemetry", async (c) => {
+  const s = await getSettings(c.env);
+
+  if (!pingAllowed(s)) return c.json({ ping: null });
+
+  const { api_key: _key, ...ping } = await buildPing(
+    c.env,
+    s.telemetry_id || "<made at the first ping>",
+    s,
+  );
+
+  return c.json({ ping });
 });
 
 miscRoutes.patch("/settings", async (c) => {

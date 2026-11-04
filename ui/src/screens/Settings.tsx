@@ -4,6 +4,7 @@ import {
   type CloudflareStatus,
   type Hostnames,
   type Settings as SettingsData,
+  type TelemetryPreview,
 } from "../api";
 import {
   CF_PERMISSIONS,
@@ -16,6 +17,7 @@ import {
   Badge,
   Button,
   ButtonLink,
+  CodeBlock,
   ConfirmDialog,
   ErrorState,
   Field,
@@ -31,6 +33,7 @@ import {
 } from "../components/ui";
 import { useApi, useTitle } from "../lib/hooks";
 import { useTheme, type ThemeChoice } from "../lib/theme";
+import { useSession } from "../session";
 
 type Reload = () => Promise<void>;
 
@@ -78,6 +81,30 @@ function Row({
         {children}
       </span>
     </div>
+  );
+}
+
+// The real ping that the next cron run sends, with live counts.
+function PingPreview() {
+  const res = useApi<TelemetryPreview>("/settings/telemetry");
+
+  return (
+    <Row label="Next ping" hint="live data, sent daily at 03:23 UTC">
+      {res.error ? (
+        <ErrorState error={res.error} title="Could not load the ping" />
+      ) : !res.data ? (
+        <SkeletonBlock className="h-24 w-full" />
+      ) : res.data.ping ? (
+        <CodeBlock
+          className="w-full"
+          tabs={[
+            { label: "ping", code: JSON.stringify(res.data.ping, null, 2) },
+          ]}
+        />
+      ) : (
+        <span className="text-fg3">nothing is sent</span>
+      )}
+    </Row>
   );
 }
 
@@ -170,12 +197,14 @@ function ToggleRow({
   hint,
   name,
   value,
+  disabled,
   onSaved,
 }: {
   label: string;
   hint?: string;
   name: string;
   value: boolean;
+  disabled?: boolean;
   onSaved: Reload;
 }) {
   const toast = useToast();
@@ -199,7 +228,11 @@ function ToggleRow({
 
   return (
     <Row label={label} hint={hint}>
-      <Toggle checked={value} onChange={() => void flip()} disabled={busy}>
+      <Toggle
+        checked={value}
+        onChange={() => void flip()}
+        disabled={busy || disabled}
+      >
         {value ? "on" : "off"}
       </Toggle>
     </Row>
@@ -500,6 +533,7 @@ function HostnameBadge({ status }: { status: string }) {
 }
 
 function Content({ data, reload }: { data: SettingsData; reload: Reload }) {
+  const { update } = useSession().session;
   const s = data.settings;
   const hosts = useApi<Hostnames>("/hostnames");
   const [purge, setPurge] = useState(false);
@@ -598,6 +632,28 @@ function Content({ data, reload }: { data: SettingsData; reload: Reload }) {
         />
       </Section>
       <Section
+        icon="chart-bar"
+        title="Usage stats"
+        help="Once a day, this deploy sends a random id and its version to PostHog. With counts, it also sends the login type, the number of domains, and the sent, failed, bounced and error counts of 24 hours. It never sends addresses, names or error text."
+      >
+        <ToggleRow
+          label="Send anonymous usage stats"
+          name="telemetry"
+          value={s.telemetry === "true"}
+          onSaved={reload}
+        />
+        <ToggleRow
+          label="Include counts"
+          hint="domains and email counts of 24 hours"
+          name="telemetry_counts"
+          value={s.telemetry === "true" && s.telemetry_counts === "true"}
+          disabled={s.telemetry !== "true"}
+          onSaved={reload}
+        />
+        {/* The key loads the preview again after a toggle. */}
+        <PingPreview key={`${s.telemetry}-${s.telemetry_counts}`} />
+      </Section>
+      <Section
         icon="server"
         title="Deploy"
         help="The name of this deploy, shown in the dashboard."
@@ -610,6 +666,13 @@ function Content({ data, reload }: { data: SettingsData; reload: Reload }) {
         />
         <Row label="Version">
           <span className="text-fg3">{data.version}</span>
+          {update && (
+            <Badge
+              status="update"
+              tone="green"
+              label={`${update.latest} available`}
+            />
+          )}
         </Row>
       </Section>
       <CloudflareSection />

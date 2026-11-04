@@ -12,6 +12,8 @@ import {
   Indicator,
   Kbd,
   Logo,
+  Notice,
+  TextLink,
   useIndicator,
 } from "./ui";
 
@@ -28,6 +30,51 @@ export const NAV: { label: string; href: string; icon: string }[] = [
   { label: "system", href: "/system", icon: "alert" },
   { label: "settings", href: "/settings", icon: "sliders" },
 ];
+
+const DISMISS_KEY = "fullsend:update-dismissed";
+
+// A notice for a newer version. The owner can dismiss it for that version.
+function UpdateNotice() {
+  const { session } = useSession();
+
+  const [dismissed, setDismissed] = useState(() =>
+    localStorage.getItem(DISMISS_KEY),
+  );
+
+  const update = session.update;
+
+  if (!update || dismissed === update.latest) return null;
+
+  return (
+    <Notice
+      tone="accent"
+      icon="download"
+      className="border-x-0 border-t-0"
+      action={
+        <IconButton
+          icon="close"
+          label="Dismiss"
+          onClick={() => {
+            localStorage.setItem(DISMISS_KEY, update.latest);
+            setDismissed(update.latest);
+          }}
+        />
+      }
+    >
+      <span className="flex flex-wrap gap-x-4 gap-y-1">
+        <span>
+          fullsend {update.latest} is available. You run {update.current}.
+        </span>
+        <TextLink href="https://github.com/omznc/fullsend#deploy">
+          how to update
+        </TextLink>
+        <TextLink href="https://github.com/omznc/fullsend/blob/main/CHANGELOG.md">
+          changelog
+        </TextLink>
+      </span>
+    </Notice>
+  );
+}
 
 function current(path: string): string {
   const hit = NAV.filter((n) =>
@@ -261,6 +308,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </nav>
         </div>
       )}
+      <UpdateNotice />
       {/* Each page fades in. The key mounts main again on a new path.
           Only the opacity changes: a transform on main would hold the
           fixed side panels while it runs. */}

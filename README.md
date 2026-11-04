@@ -398,6 +398,42 @@ fullsend stops and writes a warning in the system events. Read them with
 
 ---
 
+## Telemetry
+
+fullsend sends one anonymous usage ping each day, at 03:23 UTC. Telemetry
+is on by default. This includes a deploy that updates from an older
+version.
+
+There are two levels. Each level has its own setting:
+
+- "Send anonymous usage stats" (`telemetry`) sends the ping. The ping
+  holds the `version` and a random instance ID.
+- "Include counts" (`telemetry_counts`) adds these fields to the ping:
+  - `auth_mode`: `access` or `password`.
+  - `domains`: the number of domains.
+  - `sent_24h`, `failed_24h`, `bounced_24h`: the email counts of the last
+    24 hours.
+  - `errors_24h`: the number of `error` system events in the last 24
+    hours.
+
+The ping never holds an address, a domain name, a hostname, an error text
+or an IP address. It goes to PostHog in the EU. PostHog makes no person
+profile. PostHog sees the Cloudflare IP address of the request. The
+fullsend PostHog project discards IP data.
+
+To turn off the ping, clear "Send basic anonymous usage" in the last step
+of the setup, or "Send anonymous usage stats" in Settings. To turn off the
+counts, clear "Include counts" in the same places. A new deploy sends no
+ping before the end of the setup. A deploy with `AUTH_MODE=dev` never sends
+the ping.
+
+### Update check
+
+Once a day, the Worker reads `package.json` from the main branch on GitHub.
+It compares the version with its own version. The request sends no data
+about the deploy. GitHub sees a request from a Cloudflare IP address. The
+check runs also when telemetry is off.
+
 ## Develop
 
 **Requirements:** Node 24 and pnpm.

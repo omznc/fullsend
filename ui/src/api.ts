@@ -108,6 +108,8 @@ export interface Session {
   api_hostname: string | null;
   tracking_hostname: string | null;
   logout_url: string;
+  // Set for a signed-in caller when a newer version exists.
+  update: { latest: string; current: string } | null;
 }
 
 export type EmailStatus =
@@ -387,6 +389,16 @@ export interface HostnameResult {
   error?: string;
 }
 
+// GET /api/settings/telemetry: the next ping without its api_key, or null
+// when telemetry is off.
+export interface TelemetryPreview {
+  ping: {
+    event: string;
+    distinct_id: string;
+    properties: Record<string, string | number | boolean>;
+  } | null;
+}
+
 export interface Settings {
   settings: {
     body_retention_days: string;
@@ -395,6 +407,8 @@ export interface Settings {
     default_open_tracking: string;
     default_click_tracking: string;
     request_log: string;
+    telemetry: string;
+    telemetry_counts: string;
     deploy_name: string;
     setup_completed: string;
   };
