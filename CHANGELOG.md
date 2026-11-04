@@ -3,6 +3,27 @@
 Each section lists the changes of one release. A deploy shows its version
 in Settings and in `GET /health`.
 
+## 0.3.0
+
+### Telemetry
+
+- Send one anonymous usage ping each day, at 03:23 UTC. The ping holds a
+  random id and the version. With "Include counts", it also holds the
+  login type, the number of domains, and the email and error counts of
+  24 hours. It never holds an address, a domain name or an error text.
+  See "Telemetry" in the README.
+- Telemetry is on by default. This includes a deploy that updates to this
+  version. To turn it off, open Settings, then "Usage stats".
+- Show the choice in the last step of the setup, and a preview of the
+  real ping in Settings.
+
+### Dashboard
+
+- Check for a new version each day. When a newer version is on GitHub,
+  the dashboard shows a notice with the update steps and the changelog.
+  The owner can dismiss the notice. Settings shows the new version next
+  to the current version.
+
 ## 0.2.1
 
 ### Dashboard
